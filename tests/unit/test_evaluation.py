@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -12,8 +13,14 @@ from location_extractor.evaluation import (
     ExpectedEvent,
     evaluate_predictions,
     load_evaluation_cases,
+    summarize_performance,
 )
-from scripts.run_live_eval import _extract_with_retries, _provider_error_category
+from location_extractor.validation import CandidateValidator
+from scripts.run_live_eval import (
+    _execute_cases,
+    _extract_with_retries,
+    _provider_error_category,
+)
 
 FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "extraction_cases.json"
 
@@ -215,3 +222,58 @@ def test_provider_error_category_uses_bounded_exception_type() -> None:
         error = ExtractionProviderError("provider failed")
         error.__cause__ = cause
     assert _provider_error_category(error) == "TimeoutError"
+
+
+def test_empty_performance_summary_is_zeroed() -> None:
+    summary = summarize_performance([], [], total_duration_ms=0)
+    assert set(summary.model_dump().values()) == {0}
+
+
+def test_performance_summary_rejects_inconsistent_inputs() -> None:
+    with pytest.raises(ValueError, match="latencies and attempts must have the same length"):
+        summarize_performance([10], [], total_duration_ms=10)
+
+
+class ConcurrentExtractor:
+    provider = "fake"
+    model = "concurrency"
+
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def extract(self, message: ParsedMessage) -> ExtractionResult:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            delay = 0.03 if message.message_id == "eval-1" else 0.01
+            await asyncio.sleep(delay)
+            return ExtractionResult()
+        finally:
+            self.active -= 1
+
+
+async def test_concurrent_execution_is_bounded_and_preserves_dataset_order() -> None:
+    cases = [EvaluationCase(text=f"Message {index}.") for index in range(4)]
+    extractor = ConcurrentExtractor()
+    executions = await _execute_cases(
+        cases,
+        extractor,
+        CandidateValidator(),
+        case_retries=0,
+        concurrency=2,
+    )
+    assert extractor.max_active == 2
+    assert [execution.index for execution in executions] == [0, 1, 2, 3]
+    assert [execution.detail["text"] for execution in executions] == [case.text for case in cases]
+
+
+async def test_concurrent_execution_requires_positive_limit() -> None:
+    with pytest.raises(ValueError, match="concurrency must be positive"):
+        await _execute_cases(
+            [EvaluationCase(text="Message.")],
+            ConcurrentExtractor(),
+            CandidateValidator(),
+            case_retries=0,
+            concurrency=0,
+        )

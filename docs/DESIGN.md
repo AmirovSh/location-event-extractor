@@ -118,7 +118,8 @@ Normal CI is deterministic and does not call a live model:
 - API tests cover request validation and response outcomes;
 - PostgreSQL integration tests cover migrations, persistence, and idempotency;
 - live model evaluations are opt-in and report provider reliability separately from semantic
-  quality.
+  quality. They may execute independent single-message requests with bounded concurrency, while
+  preserving dataset order and recording latency/retry statistics.
 
 Every extraction change should add a positive case and a contrastive negative case. Important
 regression dimensions are subject attribution, false-positive locations, modality/negation,

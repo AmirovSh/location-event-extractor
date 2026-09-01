@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -53,9 +54,58 @@ class EvaluationReport(BaseModel):
     metrics: EvaluationMetrics
 
 
+class EvaluationPerformance(BaseModel):
+    total_duration_ms: int
+    average_case_latency_ms: float
+    p50_case_latency_ms: int
+    p95_case_latency_ms: int
+    max_case_latency_ms: int
+    total_attempt_count: int
+    retried_case_count: int
+    throughput_cases_per_second: float
+
+
 def load_evaluation_cases(path: Path) -> list[EvaluationCase]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return [EvaluationCase.model_validate(item) for item in payload]
+
+
+def summarize_performance(
+    case_latencies_ms: list[int],
+    attempts: list[int],
+    *,
+    total_duration_ms: int,
+) -> EvaluationPerformance:
+    if len(case_latencies_ms) != len(attempts):
+        raise ValueError("latencies and attempts must have the same length")
+    if not case_latencies_ms:
+        return EvaluationPerformance(
+            total_duration_ms=total_duration_ms,
+            average_case_latency_ms=0,
+            p50_case_latency_ms=0,
+            p95_case_latency_ms=0,
+            max_case_latency_ms=0,
+            total_attempt_count=0,
+            retried_case_count=0,
+            throughput_cases_per_second=0,
+        )
+    if any(latency < 0 for latency in case_latencies_ms) or total_duration_ms < 0:
+        raise ValueError("latencies must be non-negative")
+    if any(attempt < 1 for attempt in attempts):
+        raise ValueError("attempt counts must be positive")
+
+    ordered = sorted(case_latencies_ms)
+    seconds = total_duration_ms / 1000
+    return EvaluationPerformance(
+        total_duration_ms=total_duration_ms,
+        average_case_latency_ms=sum(case_latencies_ms) / len(case_latencies_ms),
+        p50_case_latency_ms=_nearest_rank(ordered, 0.50),
+        p95_case_latency_ms=_nearest_rank(ordered, 0.95),
+        max_case_latency_ms=ordered[-1],
+        total_attempt_count=sum(attempts),
+        retried_case_count=sum(attempt > 1 for attempt in attempts),
+        throughput_cases_per_second=len(case_latencies_ms) / seconds if seconds else 0,
+    )
 
 
 def evaluate_predictions(
@@ -214,3 +264,8 @@ def _ratio(numerator: int, denominator: int) -> float:
 
 def _f1(precision: float, recall: float) -> float:
     return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+
+def _nearest_rank(ordered_values: list[int], percentile: float) -> int:
+    index = max(0, math.ceil(percentile * len(ordered_values)) - 1)
+    return ordered_values[index]

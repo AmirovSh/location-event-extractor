@@ -259,14 +259,19 @@ $env:LOCATION_OPENAI_TRUST_ENV="false"    # bypass a blocking process proxy if r
 $env:LOCATION_OPENAI_MODEL="deepseek-v4-flash"  # verified corporate runtime model
 $env:LOCATION_OPENAI_API_MODE="chat_completions"
 $env:LOCATION_OPENAI_ENABLE_THINKING="false"
-python scripts/run_live_eval.py --case-retries 1
+python scripts/run_live_eval.py --case-retries 1 --concurrency 2
 ```
 
 The command prints aggregate precision/recall/F1 and field accuracies, then writes a detailed
 ignored report to `evaluation-results/live-eval.json`. Use `--dataset` and `--output` to override
 either path. Provider failures and candidates rejected by deterministic validation are reported
 separately. Cases with provider failures are excluded from semantic metric denominators rather
-than being counted as abstentions.
+than being counted as abstentions. `--concurrency` bounds independent single-message provider
+calls; report order still follows dataset order. The report includes per-case latency and aggregate
+wall time, average, p50, p95, maximum, throughput, and retry counts.
+Per-case latency is end-to-end from task scheduling through semaphore waiting, retries, provider
+work, and validation; it therefore represents observed runner latency rather than provider-only
+service time.
 
 ## Semantics and limits
 

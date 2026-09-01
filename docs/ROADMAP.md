@@ -13,7 +13,8 @@ Implemented:
 - PostgreSQL persistence, Alembic migrations, and Docker Compose setup;
 - unit, API, adapter, repository, and PostgreSQL integration tests;
 - deterministic English evaluation metrics, an opt-in live evaluation command, and a first local
-  `deepseek-v4-flash` baseline.
+  `deepseek-v4-flash` baseline;
+- bounded live-evaluation concurrency with stable ordering and latency/retry statistics.
 
 Not active in the current workflow:
 
@@ -24,11 +25,20 @@ cases received a provider response, event-detection F1 was 1.0, whole-event F1 w
 abstention accuracy was 1.0. One negative case ended with an API timeout after two attempts. This
 small synthetic dataset is a regression baseline, not a production-readiness claim.
 
+A bounded-concurrency run with two request slots completed all 24 cases in 297 seconds with no
+provider failures, four retried cases, event-detection F1 of 0.968, and whole-event F1 of 0.941.
+One ticket-purchase negative case became a false positive on its retry, confirming that repeated
+live runs are required to characterize model variability.
+
+Concurrency trials on the same endpoint kept `2` as the default: `3` slots reduced wall time to
+245 seconds but lost two cases to API timeouts, while `4` slots finished in 182 seconds but lost
+three cases. For evaluation, complete coverage is more valuable than the additional throughput;
+higher limits remain available as an explicit CLI override for other provider deployments.
+
 ## Next
 
 1. Expand the anonymized English fixture set as production-like edge cases are discovered.
-2. Add bounded concurrency and latency statistics to live evaluation without changing ordinary CI.
-3. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
+2. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
    makes filtering worthwhile.
 
 ## Post-MVP
