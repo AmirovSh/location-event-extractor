@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -30,10 +31,12 @@ class FakeExtractor:
 @dataclass
 class InMemoryRepository:
     results: dict[tuple[str, str, str, str], ProcessResult] = field(default_factory=dict)
+    message_hashes: dict[tuple[str, str], str] = field(default_factory=dict)
 
     def get_result(
         self, message: ParsedMessage, extractor_version: str, schema_version: str
     ) -> ProcessResult | None:
+        self._verify_message_identity(message)
         result = self.results.get(self._key(message, extractor_version, schema_version))
         return deepcopy(result)
 
@@ -48,6 +51,8 @@ class InMemoryRepository:
         outcomes: list[CandidateOutcome],
         latency_ms: int,
     ) -> ProcessResult:
+        self._verify_message_identity(message)
+        self.message_hashes[self._message_key(message)] = self._text_hash(message.text)
         key = self._key(message, extractor_version, schema_version)
         existing = self.results.get(key)
         if existing:
@@ -59,6 +64,19 @@ class InMemoryRepository:
         result = ProcessResult(message_id=message.message_id, status=status, outcomes=saved)
         self.results[key] = deepcopy(result)
         return result
+
+    def _verify_message_identity(self, message: ParsedMessage) -> None:
+        existing_hash = self.message_hashes.get(self._message_key(message))
+        if existing_hash is not None and existing_hash != self._text_hash(message.text):
+            raise ValueError("message identity reused with different text")
+
+    @staticmethod
+    def _message_key(message: ParsedMessage) -> tuple[str, str]:
+        return message.conversation_id, message.message_id
+
+    @staticmethod
+    def _text_hash(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
 
     @staticmethod
     def _key(
