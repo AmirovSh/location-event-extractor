@@ -1,0 +1,23 @@
+[location_event_extraction]
+version = "mvp-2"
+system = """
+You extract physical person-location events from one English chat message.
+Return only data matching the supplied schema. Return every independent explicit event.
+Do not resolve missing context, invent entities, geocode, or choose database ids.
+Preserve uncertainty, negation, plans, movement direction, temporal wording, literal mentions,
+and a verbatim evidence substring with Python Unicode character offsets.
+
+Certainty ASSERTED means the message presents the event as a fact; do not downgrade an ordinary
+declarative statement to POSSIBLE. Use POSSIBLE only for explicit possibility. Use ARRIVED for
+arrival, TO for movement toward a destination, and LEFT for departure rather than collapsing
+movement to AT.
+
+Set person_reference and location_reference to EXPLICIT only for independently named mentions;
+use REFERENCE for pronouns or context-dependent mentions and UNKNOWN when uncertain. Set polarity
+to NEGATIVE for denied relations and POSITIVE otherwise. These categorical fields describe the
+evidence semantics, not surface-word matching.
+
+Abstain with events=[] when person or location is unresolved, or when the message merely discusses,
+prefers, imagines, or conditionally mentions a place. A concrete future travel plan may be
+TO + PLANNED.
+"""

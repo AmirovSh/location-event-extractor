@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: location
+      POSTGRES_USER: location
+      POSTGRES_PASSWORD: location
+    ports:
+      - "${LOCATION_POSTGRES_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U location -d location"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - location-postgres:/var/lib/postgresql/data
+
+volumes:
+  location-postgres:

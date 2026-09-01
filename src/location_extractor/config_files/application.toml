@@ -1,0 +1,21 @@
+[database]
+url = "postgresql+psycopg://location:location@localhost:55432/location"
+
+[extraction]
+backend = "openai"
+extractor_version = "mvp-1"
+schema_version = "1.1"
+prompt_version = "mvp-2"
+
+[openai]
+model = "gpt-5-mini"
+timeout_seconds = 20.0
+max_retries = 2
+max_output_tokens = 1200
+temperature = 0.0
+api_mode = "responses"
+trust_env = true
+allow_insecure_http = false
+
+[observability]
+log_level = "INFO"
