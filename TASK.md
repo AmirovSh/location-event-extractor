@@ -189,4 +189,4 @@ MVP считается готовым, когда:
 8. Для каждого event сохраняется source provenance.
 9. Тесты покрывают positive, negative, uncertain, movement, explicitness и attribution cases.
 10. `pytest`/equivalent проходит локально.
-11. Архитектура не блокирует roadmap из `IMPLEMENTATION_PLAN.md`.
+11. Архитектура не блокирует roadmap из `docs/ROADMAP.md`.

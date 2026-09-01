@@ -8,6 +8,9 @@ The current extraction contract and deterministic reference checks are English-f
 Reference and polarity decisions are represented as typed semantic fields; validation does not
 use word lists or phrase-matching rules.
 
+Detailed technical rules and decisions are consolidated in [docs/DESIGN.md](docs/DESIGN.md).
+Current progress and planned extensions are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Architecture workflow
 
 ```mermaid

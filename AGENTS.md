@@ -9,15 +9,9 @@
 Перед изменением кода прочитай в таком порядке:
 
 1. `TASK.md`
-2. `ARCHITECTURE.md`
-3. `DOMAIN_MODEL.md`
-4. `LLM_EXTRACTION_SPEC.md`
-5. `DATABASE.md`
-6. `TEST_STRATEGY.md`
-7. `SECURITY_PRIVACY.md`
-8. `DECISIONS.md`
-
-Для задач, связанных с extraction/prompts/evals, дополнительно прочитай `skills/location-event-extraction/SKILL.md`.
+2. `docs/DESIGN.md`
+3. `docs/ROADMAP.md`
+4. `README.md`
 
 ## Engineering rules
 
@@ -65,4 +59,4 @@
 
 ## Stop conditions
 
-Не расширяй scope за пределы `TASK.md`. Если обнаружена неоднозначность, выбирай минимальное решение, совместимое с `ARCHITECTURE.md`, и документируй допущение в `DECISIONS.md` или ADR, если оно архитектурно значимо.
+Не расширяй scope за пределы `TASK.md`. Если обнаружена неоднозначность, выбирай минимальное решение, совместимое с `docs/DESIGN.md`, и документируй архитектурно значимое допущение там же.
