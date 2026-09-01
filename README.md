@@ -207,13 +207,13 @@ All variables use the `LOCATION_` prefix:
 | `EXTRACTOR_BACKEND` | `openai` | `openai` or test-only `fake` |
 | `EXTRACTOR_VERSION` | `mvp-1` | Idempotency/reprocessing version |
 | `SCHEMA_VERSION` | `1.1` | Structured contract version |
-| `PROMPT_VERSION` | `mvp-2` | Provider instruction version |
+| `PROMPT_VERSION` | `mvp-3` | Provider instruction version |
 | `OPENAI_API_KEY` | unset | Required for the OpenAI backend |
 | `OPENAI_BASE_URL` | OpenAI default | OpenAI-compatible Responses API base URL |
 | `ALLOW_INSECURE_HTTP` | `false` | Explicit opt-in for trusted-network HTTP endpoints |
 | `OPENAI_TRUST_ENV` | `true` | Honor HTTP proxy environment variables |
 | `OPENAI_API_MODE` | `responses` | `responses` or compatible `chat_completions` |
-| `OPENAI_MAX_OUTPUT_TOKENS` | `1200` | Output/reasoning budget for chat compatibility mode |
+| `OPENAI_MAX_OUTPUT_TOKENS` | `4096` | Bounded output/reasoning budget for chat compatibility mode |
 | `OPENAI_ENABLE_THINKING` | unset | Qwen-compatible thinking toggle for chat mode |
 | `OPENAI_TEMPERATURE` | `0` | Deterministic extraction sampling temperature |
 | `OPENAI_MODEL` | `gpt-5-mini` | Responses API model |
@@ -259,13 +259,14 @@ $env:LOCATION_OPENAI_TRUST_ENV="false"    # bypass a blocking process proxy if r
 $env:LOCATION_OPENAI_MODEL="deepseek-v4-flash"  # verified corporate runtime model
 $env:LOCATION_OPENAI_API_MODE="chat_completions"
 $env:LOCATION_OPENAI_ENABLE_THINKING="false"
-python scripts/run_live_eval.py
+python scripts/run_live_eval.py --case-retries 1
 ```
 
 The command prints aggregate precision/recall/F1 and field accuracies, then writes a detailed
 ignored report to `evaluation-results/live-eval.json`. Use `--dataset` and `--output` to override
 either path. Provider failures and candidates rejected by deterministic validation are reported
-separately.
+separately. Cases with provider failures are excluded from semantic metric denominators rather
+than being counted as abstentions.
 
 ## Semantics and limits
 

@@ -117,7 +117,8 @@ Normal CI is deterministic and does not call a live model:
   behavior;
 - API tests cover request validation and response outcomes;
 - PostgreSQL integration tests cover migrations, persistence, and idempotency;
-- live model smoke tests are opt-in and measure provider behavior, not application correctness.
+- live model evaluations are opt-in and report provider reliability separately from semantic
+  quality.
 
 Every extraction change should add a positive case and a contrastive negative case. Important
 regression dimensions are subject attribution, false-positive locations, modality/negation,

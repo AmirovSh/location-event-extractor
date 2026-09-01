@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from location_extractor.domain import LocationEventCandidate
+from location_extractor.application import ExtractionProviderError
+from location_extractor.domain import ExtractionResult, LocationEventCandidate, ParsedMessage
 from location_extractor.evaluation import (
     EvaluationCase,
     ExpectedEvent,
     evaluate_predictions,
     load_evaluation_cases,
 )
+from scripts.run_live_eval import _extract_with_retries, _provider_error_category
 
 FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "extraction_cases.json"
 
@@ -51,6 +54,7 @@ def test_perfect_predictions_score_one() -> None:
     assert report.metrics.whole_event_f1 == 1
     assert report.metrics.person_accuracy == 1
     assert report.metrics.abstention_accuracy == 1
+    assert report.evaluated_case_count == 2
 
 
 def test_metrics_count_false_positive_missing_event_and_field_errors() -> None:
@@ -90,6 +94,32 @@ def test_metrics_count_false_positive_missing_event_and_field_errors() -> None:
     assert report.metrics.abstention_accuracy == 0
     assert report.validator_rejection_count == 2
     assert report.provider_error_count == 1
+
+
+def test_provider_error_cases_are_excluded_from_semantic_metrics() -> None:
+    cases = [
+        EvaluationCase(text="John likes London."),
+        EvaluationCase(text="Mary likes Paris."),
+    ]
+    report = evaluate_predictions(
+        cases,
+        [[], []],
+        provider_error_count=1,
+        provider_error_indices={0},
+    )
+    assert report.case_count == 2
+    assert report.evaluated_case_count == 1
+    assert report.detection.true_negative == 1
+    assert report.metrics.abstention_accuracy == 1
+
+
+def test_provider_error_index_must_reference_a_case() -> None:
+    with pytest.raises(ValueError, match="provider error index is outside the case range"):
+        evaluate_predictions(
+            [EvaluationCase(text="John likes London.")],
+            [[]],
+            provider_error_indices={1},
+        )
 
 
 def test_event_order_does_not_affect_exact_match() -> None:
@@ -132,3 +162,56 @@ def test_fixture_dataset_is_english_only_and_covers_core_contrasts() -> None:
     certainties = {event.certainty.value for case in cases for event in case.events}
     assert {"AT", "TO", "FROM", "LEFT", "ARRIVED", "NEAR"} <= relations
     assert {"ASSERTED", "PROBABLE", "POSSIBLE", "NEGATED", "PLANNED"} <= certainties
+
+
+class FlakyExtractor:
+    provider = "fake"
+    model = "fixture"
+
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.calls = 0
+
+    async def extract(self, message: ParsedMessage) -> ExtractionResult:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ExtractionProviderError("temporary failure")
+        return ExtractionResult()
+
+
+@pytest.mark.parametrize(("failures", "retries", "expected_attempts"), [(0, 1, 1), (1, 1, 2)])
+async def test_live_eval_retries_provider_failures(
+    failures: int, retries: int, expected_attempts: int
+) -> None:
+    extractor = FlakyExtractor(failures)
+    message = ParsedMessage(
+        conversation_id="eval",
+        message_id="case",
+        sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
+        text="John is in London.",
+    )
+    _, attempts = await _extract_with_retries(extractor, message, case_retries=retries)
+    assert attempts == expected_attempts
+    assert extractor.calls == expected_attempts
+
+
+async def test_live_eval_stops_after_retry_budget() -> None:
+    extractor = FlakyExtractor(failures=2)
+    message = ParsedMessage(
+        conversation_id="eval",
+        message_id="case",
+        sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
+        text="John is in London.",
+    )
+    with pytest.raises(ExtractionProviderError):
+        await _extract_with_retries(extractor, message, case_retries=1)
+    assert extractor.calls == 2
+
+
+def test_provider_error_category_uses_bounded_exception_type() -> None:
+    try:
+        raise TimeoutError("sensitive provider details")
+    except TimeoutError as cause:
+        error = ExtractionProviderError("provider failed")
+        error.__cause__ = cause
+    assert _provider_error_category(error) == "TimeoutError"

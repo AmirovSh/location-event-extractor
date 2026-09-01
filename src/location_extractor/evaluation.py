@@ -44,6 +44,7 @@ class EvaluationMetrics(BaseModel):
 
 class EvaluationReport(BaseModel):
     case_count: int
+    evaluated_case_count: int
     expected_event_count: int
     predicted_event_count: int
     validator_rejection_count: int = 0
@@ -63,16 +64,23 @@ def evaluate_predictions(
     *,
     validator_rejection_count: int = 0,
     provider_error_count: int = 0,
+    provider_error_indices: set[int] | None = None,
 ) -> EvaluationReport:
     if len(cases) != len(predictions):
         raise ValueError("cases and predictions must have the same length")
+
+    excluded = provider_error_indices or set()
+    if any(index < 0 or index >= len(cases) for index in excluded):
+        raise ValueError("provider error index is outside the case range")
 
     true_positive = false_positive = false_negative = true_negative = 0
     expected_total = predicted_total = exact_matches = 0
     person_matches = location_matches = relation_matches = certainty_matches = 0
     abstention_total = abstention_matches = 0
 
-    for case, predicted in zip(cases, predictions, strict=True):
+    for index, (case, predicted) in enumerate(zip(cases, predictions, strict=True)):
+        if index in excluded:
+            continue
         expected = case.events
         expected_present = bool(expected)
         predicted_present = bool(predicted)
@@ -113,6 +121,7 @@ def evaluate_predictions(
     event_recall = _ratio(exact_matches, expected_total)
     return EvaluationReport(
         case_count=len(cases),
+        evaluated_case_count=len(cases) - len(excluded),
         expected_event_count=expected_total,
         predicted_event_count=predicted_total,
         validator_rejection_count=validator_rejection_count,

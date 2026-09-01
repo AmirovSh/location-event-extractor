@@ -1,7 +1,7 @@
 [
   {"text":"John is in London.","events":[{"person_mention":"John","location_mention":"London","relation":"AT","certainty":"ASSERTED"}]},
   {"text":"Peter arrived in Astana.","events":[{"person_mention":"Peter","location_mention":"Astana","relation":"ARRIVED","certainty":"ASSERTED"}]},
-  {"text":"Anna is going to the airport.","events":[{"person_mention":"Anna","location_mention":"the airport","relation":"TO","certainty":"ASSERTED"}]},
+  {"text":"Anna is traveling toward the airport.","events":[{"person_mention":"Anna","location_mention":"the airport","relation":"TO","certainty":"ASSERTED"}]},
   {"text":"Sergey left the office.","events":[{"person_mention":"Sergey","location_mention":"the office","relation":"LEFT","certainty":"ASSERTED"}]},
   {"text":"Maria traveled from Boston.","events":[{"person_mention":"Maria","location_mention":"Boston","relation":"FROM","certainty":"ASSERTED"}]},
   {"text":"David is near Central Station.","events":[{"person_mention":"David","location_mention":"Central Station","relation":"NEAR","certainty":"ASSERTED"}]},
