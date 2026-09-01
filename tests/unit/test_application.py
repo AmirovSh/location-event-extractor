@@ -19,7 +19,7 @@ def make_message() -> ParsedMessage:
         message_id="msg-1001",
         author_id="user-5",
         sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
-        text="Иван в Алматы, а Мария в Астане.",
+        text="John is in London, and Mary is in Paris.",
     )
 
 
@@ -41,18 +41,18 @@ async def test_multiple_candidates_and_idempotent_replay() -> None:
         ExtractionResult(
             events=[
                 LocationEventCandidate(
-                    person_mention="Иван",
-                    location_mention="Алматы",
+                    person_mention="John",
+                    location_mention="London",
                     relation="AT",
                     certainty="ASSERTED",
-                    evidence_text="Иван в Алматы",
+                    evidence_text="John is in London",
                 ),
                 LocationEventCandidate(
-                    person_mention="Мария",
-                    location_mention="Астане",
+                    person_mention="Mary",
+                    location_mention="Paris",
                     relation="AT",
                     certainty="ASSERTED",
-                    evidence_text="Мария в Астане",
+                    evidence_text="Mary is in Paris",
                 ),
             ]
         )
@@ -74,9 +74,9 @@ async def test_rejected_candidate_is_not_persisted() -> None:
                 LocationEventCandidate(
                     person_mention="He",
                     person_reference="REFERENCE",
-                    location_mention="Алматы",
+                    location_mention="London",
                     relation="AT",
-                    evidence_text="Иван в Алматы",
+                    evidence_text="John is in London",
                 )
             ]
         )

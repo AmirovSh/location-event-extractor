@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -26,16 +27,16 @@ def test_postgres_migration_and_idempotent_repository() -> None:
     repo = SqlAlchemyLocationEventRepository(create_session_factory(url))
     message = ParsedMessage(
         conversation_id="integration",
-        message_id="m-1",
+        message_id=f"m-{uuid4()}",
         sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
-        text="Иван в Алматы",
+        text="John is in London",
     )
     candidate = LocationEventCandidate(
-        person_mention="Иван",
-        location_mention="Алматы",
+        person_mention="John",
+        location_mention="London",
         relation="AT",
         certainty="ASSERTED",
-        evidence_text="Иван в Алматы",
+        evidence_text="John is in London",
     )
     first = repo.save_result(
         message,

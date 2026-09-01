@@ -12,19 +12,17 @@ Implemented:
 - multiple candidates, typed outcomes, and idempotent replay;
 - PostgreSQL persistence, Alembic migrations, and Docker Compose setup;
 - unit, API, adapter, repository, and PostgreSQL integration tests;
-- opt-in live LLM smoke command.
+- deterministic English evaluation metrics and an opt-in live evaluation command.
 
 Not active in the current workflow:
 
 - Stanza/NLP pre-filter (`AlwaysPassDetector` is used);
-- live-model quality metrics and baseline comparison.
+- a recorded live-model baseline for the current prompt/model pair.
 
 ## Next
 
-1. Build an evaluation harness for precision, recall, relation/certainty accuracy, exact match,
-   false positives, and abstention quality.
-2. Expand the anonymized English fixture set with noisy chat, attribution, multi-event, and
-   contrastive negative cases.
+1. Record and review the first live English baseline for the current prompt/model pair.
+2. Expand the anonymized English fixture set as production-like edge cases are discovered.
 3. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
    makes filtering worthwhile.
 
@@ -37,3 +35,5 @@ Not active in the current workflow:
 5. Relative-time normalization while preserving the raw expression.
 6. Conflict and correction handling plus a derived current-location read model.
 7. Human review, versioned reprocessing, quality monitoring, and drift detection.
+8. Add other languages through explicit language-specific datasets, prompts, evaluation
+   baselines, and release criteria; do not assume English quality transfers automatically.

@@ -27,86 +27,86 @@ def message(text: str) -> ParsedMessage:
     ("text", "candidate", "accepted", "reason"),
     [
         (
-            "Иван в Алматы.",
+            "John is in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "AT",
                 "certainty": "ASSERTED",
-                "evidence_text": "Иван в Алматы",
+                "evidence_text": "John is in London",
             },
             True,
             None,
         ),
         (
-            "Петр приехал в Астану.",
+            "Peter arrived in Astana.",
             {
-                "person_mention": "Петр",
-                "location_mention": "Астану",
+                "person_mention": "Peter",
+                "location_mention": "Astana",
                 "relation": "ARRIVED",
                 "certainty": "ASSERTED",
-                "evidence_text": "Петр приехал в Астану",
+                "evidence_text": "Peter arrived in Astana",
             },
             True,
             None,
         ),
         (
-            "Сергей вышел из офиса.",
+            "Sergey left the office.",
             {
-                "person_mention": "Сергей",
-                "location_mention": "офиса",
+                "person_mention": "Sergey",
+                "location_mention": "the office",
                 "relation": "LEFT",
                 "certainty": "ASSERTED",
-                "evidence_text": "Сергей вышел из офиса",
+                "evidence_text": "Sergey left the office",
             },
             True,
             None,
         ),
         (
-            "Иван не в Алматы.",
+            "John is not in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "AT",
                 "certainty": "NEGATED",
-                "evidence_text": "Иван не в Алматы",
+                "evidence_text": "John is not in London",
             },
             True,
             None,
         ),
         (
-            "Наверное, Иван в Алматы.",
+            "John is probably in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "AT",
                 "certainty": "PROBABLE",
-                "evidence_text": "Наверное, Иван в Алматы",
+                "evidence_text": "John is probably in London",
             },
             True,
             None,
         ),
         (
-            "Иван может быть в Алматы.",
+            "John may be in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "AT",
                 "certainty": "POSSIBLE",
-                "evidence_text": "Иван может быть в Алматы",
+                "evidence_text": "John may be in London",
             },
             True,
             None,
         ),
         (
-            "Иван завтра поедет в Алматы.",
+            "John will travel to London tomorrow.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "TO",
                 "certainty": "PLANNED",
-                "temporal_raw": "завтра",
-                "evidence_text": "Иван завтра поедет в Алматы",
+                "temporal_raw": "tomorrow",
+                "evidence_text": "John will travel to London tomorrow",
             },
             True,
             None,
@@ -136,23 +136,23 @@ def message(text: str) -> ParsedMessage:
             RejectionReason.UNSUPPORTED_LOCATION_REFERENCE,
         ),
         (
-            "Иван в Алматы.",
+            "John is in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Астана",
+                "person_mention": "John",
+                "location_mention": "Paris",
                 "relation": "AT",
-                "evidence_text": "Иван в Алматы",
+                "evidence_text": "John is in London",
             },
             False,
             RejectionReason.EVIDENCE_MISMATCH,
         ),
         (
-            "Иван в Алматы.",
+            "John is in London.",
             {
-                "person_mention": "Иван",
-                "location_mention": "Алматы",
+                "person_mention": "John",
+                "location_mention": "London",
                 "relation": "UNKNOWN",
-                "evidence_text": "Иван в Алматы",
+                "evidence_text": "John is in London",
             },
             False,
             RejectionReason.UNKNOWN_RELATION,
@@ -168,12 +168,12 @@ def test_persistability_table(
 
 
 def test_unicode_offsets_are_python_character_offsets() -> None:
-    text = "📍 Иван в Алматы."
-    evidence = "Иван в Алматы"
+    text = "📍 John is in London."
+    evidence = "John is in London"
     start = text.index(evidence)
     candidate = LocationEventCandidate(
-        person_mention="Иван",
-        location_mention="Алматы",
+        person_mention="John",
+        location_mention="London",
         relation=LocationRelation.AT,
         certainty=Certainty.ASSERTED,
         evidence_text=evidence,
@@ -184,10 +184,10 @@ def test_unicode_offsets_are_python_character_offsets() -> None:
 
 
 def test_unique_evidence_repairs_provider_offset() -> None:
-    text = "Иван сейчас в Алматы."
+    text = "John is in London now."
     candidate = LocationEventCandidate(
-        person_mention="Иван",
-        location_mention="Алматы",
+        person_mention="John",
+        location_mention="London",
         relation=LocationRelation.AT,
         certainty=Certainty.ASSERTED,
         evidence_text=text,

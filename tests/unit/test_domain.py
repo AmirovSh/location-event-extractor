@@ -12,5 +12,5 @@ def test_message_requires_timezone() -> None:
             conversation_id="conv",
             message_id="msg",
             sent_at="2026-08-31T10:15:00",
-            text="Иван в Алматы.",
+            text="John is in London.",
         )

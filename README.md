@@ -4,9 +4,10 @@ Backend MVP that converts one already-parsed chat message into auditable, typed
 person-location events. The LLM only produces candidates; deterministic code validates
 explicit mentions and evidence before PostgreSQL persistence.
 
-The current extraction contract and deterministic reference checks are English-first.
+The current extraction contract, test suite, and evaluation dataset are English-only.
 Reference and polarity decisions are represented as typed semantic fields; validation does not
-use word lists or phrase-matching rules.
+use word lists or phrase-matching rules. Other languages are a planned, separately evaluated
+extension.
 
 Detailed technical rules and decisions are consolidated in [docs/DESIGN.md](docs/DESIGN.md).
 Current progress and planned extensions are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -143,6 +144,54 @@ The response contains one outcome per candidate, with its rejection reason or pe
 ID. `replayed: true` means that message/extractor/schema version was already processed. Reusing
 a message identity with different text returns HTTP 409.
 
+## End-to-end example
+
+For the request above, the adapter sends the current message to the model as:
+
+```text
+message_id: msg-1001
+sent_at: 2026-08-31T10:15:00+05:00
+text: John is in London now
+```
+
+The versioned system prompt and the Pydantic `ExtractionResult` schema are supplied separately.
+A valid structured model response is:
+
+```json
+{
+  "events": [
+    {
+      "person_mention": "John",
+      "person_reference": "EXPLICIT",
+      "location_mention": "London",
+      "location_reference": "EXPLICIT",
+      "relation": "AT",
+      "certainty": "ASSERTED",
+      "polarity": "POSITIVE",
+      "location_type": "CITY",
+      "temporal_raw": "now",
+      "evidence_text": "John is in London now",
+      "evidence_start": 0,
+      "evidence_end": 21,
+      "ambiguous": false,
+      "ambiguity_reason": null
+    }
+  ]
+}
+```
+
+After deterministic validation, one transaction creates:
+
+| Table | Relevant values |
+|---|---|
+| `source_messages` | `msg-1001`, `conv-42`, author and timestamp, SHA-256 text hash |
+| `extraction_runs` | source FK, extractor/schema versions, provider/model, `PERSISTED`, latency |
+| `location_events` | run/source FKs plus the accepted candidate fields and evidence span |
+
+The complete message text is not stored. If validation rejects a candidate, its typed fields and
+reason go to `extraction_rejections` instead of `location_events`. A repeated request with the
+same message and extractor/schema versions returns the existing run without another model call.
+
 ## Configuration
 
 Versioned non-secret defaults live in
@@ -199,8 +248,8 @@ $env:TEST_DATABASE_URL=$env:LOCATION_DATABASE_URL
 pytest -m integration
 ```
 
-No live model call is part of CI. Semantic fixtures are in
-`tests/fixtures/extraction_cases.json`; live evaluation remains opt-in and future work.
+No live model call is part of CI. The deterministic scorer and English dataset are covered by
+ordinary tests. Semantic fixtures are in `tests/fixtures/extraction_cases.json`.
 
 Run the bounded live LLM smoke set with explicitly configured runtime access:
 
@@ -210,8 +259,13 @@ $env:LOCATION_OPENAI_TRUST_ENV="false"    # bypass a blocking process proxy if r
 $env:LOCATION_OPENAI_MODEL="deepseek-v4-flash"  # verified corporate runtime model
 $env:LOCATION_OPENAI_API_MODE="chat_completions"
 $env:LOCATION_OPENAI_ENABLE_THINKING="false"
-python scripts/live_llm_smoke.py
+python scripts/run_live_eval.py
 ```
+
+The command prints aggregate precision/recall/F1 and field accuracies, then writes a detailed
+ignored report to `evaluation-results/live-eval.json`. Use `--dataset` and `--output` to override
+either path. Provider failures and candidates rejected by deterministic validation are reported
+separately.
 
 ## Semantics and limits
 

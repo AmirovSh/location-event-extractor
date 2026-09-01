@@ -44,7 +44,9 @@ events using explicit business rules.
 
 ## Extraction rules
 
-The extraction contract is English-first and operates on one message without dialogue history.
+The MVP extraction contract and all automated evaluation data are English-only. Support for
+additional languages requires separate datasets and quality baselines and is tracked in the
+roadmap. Extraction operates on one message without dialogue history.
 
 - Extract physical person-location presence or movement only.
 - Preserve literal mentions and evidence; do not canonicalize or geocode.

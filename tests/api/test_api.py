@@ -16,13 +16,13 @@ def test_extract_endpoint() -> None:
             ExtractionResult(
                 events=[
                     LocationEventCandidate(
-                        person_mention="Иван",
-                        location_mention="Алматы",
+                        person_mention="John",
+                        location_mention="London",
                         relation="AT",
                         certainty="ASSERTED",
-                        evidence_text="Иван сейчас в Алматы",
+                        evidence_text="John is in London now",
                         evidence_start=0,
-                        evidence_end=20,
+                        evidence_end=21,
                     )
                 ]
             )
@@ -40,13 +40,13 @@ def test_extract_endpoint() -> None:
             "message_id": "msg-1001",
             "author_id": "user-5",
             "sent_at": "2026-08-31T10:15:00+05:00",
-            "text": "Иван сейчас в Алматы",
+            "text": "John is in London now",
         },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "PERSISTED"
-    assert body["outcomes"][0]["candidate"]["person_mention"] == "Иван"
+    assert body["outcomes"][0]["candidate"]["person_mention"] == "John"
     assert body["outcomes"][0]["event_id"]
 
 
@@ -60,5 +60,5 @@ def test_malformed_input_is_422() -> None:
         schema_version="1.0",
     )
     client = TestClient(create_app(lambda: service))
-    response = client.post("/v1/location-events/extract", json={"text": "Иван в Алматы"})
+    response = client.post("/v1/location-events/extract", json={"text": "John is in London"})
     assert response.status_code == 422

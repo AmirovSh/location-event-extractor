@@ -37,11 +37,11 @@ async def test_adapter_uses_typed_responses_output() -> None:
         ExtractionResult(
             events=[
                 LocationEventCandidate(
-                    person_mention="Иван",
-                    location_mention="Алматы",
+                    person_mention="John",
+                    location_mention="London",
                     relation="AT",
                     certainty="ASSERTED",
-                    evidence_text="Иван в Алматы",
+                    evidence_text="John is in London",
                 )
             ]
         )
@@ -61,7 +61,7 @@ async def test_adapter_uses_typed_responses_output() -> None:
             conversation_id="c",
             message_id="m",
             sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
-            text="Иван в Алматы",
+            text="John is in London",
         )
     )
     assert result.events[0].relation.value == "AT"
@@ -110,7 +110,7 @@ async def test_chat_completions_compatibility_mode() -> None:
             conversation_id="c",
             message_id="m",
             sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
-            text="Мне нравится Алматы.",
+            text="I like London.",
         )
     )
     assert result == parsed

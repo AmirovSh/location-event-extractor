@@ -25,14 +25,14 @@ def test_repository_round_trip_and_replay(tmp_path: object) -> None:
         conversation_id="conv",
         message_id="msg",
         sent_at=datetime.fromisoformat("2026-08-31T10:15:00+05:00"),
-        text="Иван в Алматы",
+        text="John is in London",
     )
     candidate = LocationEventCandidate(
-        person_mention="Иван",
-        location_mention="Алматы",
+        person_mention="John",
+        location_mention="London",
         relation="AT",
         certainty="ASSERTED",
-        evidence_text="Иван в Алматы",
+        evidence_text="John is in London",
     )
     first = repository.save_result(
         message,
