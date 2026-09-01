@@ -1,0 +1,14 @@
+[
+  {"text":"John is in London.","events":[{"person_mention":"John","location_mention":"London","relation":"AT","certainty":"ASSERTED"}]},
+  {"text":"Peter arrived in Astana.","events":[{"person_mention":"Peter","location_mention":"Astana","relation":"ARRIVED","certainty":"ASSERTED"}]},
+  {"text":"Anna is going to the airport.","events":[{"person_mention":"Anna","location_mention":"the airport","relation":"TO","certainty":"ASSERTED"}]},
+  {"text":"Sergey left the office.","events":[{"person_mention":"Sergey","location_mention":"the office","relation":"LEFT","certainty":"ASSERTED"}]},
+  {"text":"John is not in London.","events":[{"person_mention":"John","location_mention":"London","relation":"AT","certainty":"NEGATED"}]},
+  {"text":"John will travel to London tomorrow.","events":[{"person_mention":"John","location_mention":"London","relation":"TO","certainty":"PLANNED"}]},
+  {"text":"John said that Mary is in Boston.","events":[{"person_mention":"Mary","location_mention":"Boston","relation":"AT","certainty":"ASSERTED"}]},
+  {"text":"I like London.","events":[]},
+  {"text":"John is thinking about a trip to London.","events":[]},
+  {"text":"He is in London.","events":[]},
+  {"text":"John is there.","events":[]},
+  {"text":"If John is in London, call me.","events":[]}
+]

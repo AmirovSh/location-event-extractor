@@ -1,0 +1,1 @@
+"""Location Event Extractor."""
