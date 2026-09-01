@@ -207,7 +207,7 @@ All variables use the `LOCATION_` prefix:
 | `EXTRACTOR_BACKEND` | `openai` | `openai` or test-only `fake` |
 | `EXTRACTOR_VERSION` | `mvp-1` | Idempotency/reprocessing version |
 | `SCHEMA_VERSION` | `1.1` | Structured contract version |
-| `PROMPT_VERSION` | `mvp-3` | Provider instruction version |
+| `PROMPT_VERSION` | `mvp-5` | Provider instruction version |
 | `OPENAI_API_KEY` | unset | Required for the OpenAI backend |
 | `OPENAI_BASE_URL` | OpenAI default | OpenAI-compatible Responses API base URL |
 | `ALLOW_INSECURE_HTTP` | `false` | Explicit opt-in for trusted-network HTTP endpoints |
@@ -269,6 +269,12 @@ separately. Cases with provider failures are excluded from semantic metric denom
 than being counted as abstentions. `--concurrency` bounds independent single-message provider
 calls; report order still follows dataset order. The report includes per-case latency and aggregate
 wall time, average, p50, p95, maximum, throughput, and retry counts.
+The bundled 64-case dataset assigns every message one primary regression category: presence,
+movement, modality, attribution, multiple events, travel context, unresolved references,
+hypotheticals, or non-physical mentions. The JSON report includes metrics for each category so a
+strong aggregate score cannot hide a weak semantic area.
+Use repeatable `--category`, for example `--category hypothetical --category travel_context`, to
+run a focused prompt-development check before paying the cost of another complete baseline.
 Per-case latency is end-to-end from task scheduling through semaphore waiting, retries, provider
 work, and validation; it therefore represents observed runner latency rather than provider-only
 service time.

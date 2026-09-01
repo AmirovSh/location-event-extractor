@@ -5,7 +5,7 @@ url = "postgresql+psycopg://location:location@localhost:55432/location"
 backend = "openai"
 extractor_version = "mvp-1"
 schema_version = "1.1"
-prompt_version = "mvp-3"
+prompt_version = "mvp-5"
 
 [openai]
 model = "gpt-5-mini"

@@ -10,6 +10,7 @@ from location_extractor.application import ExtractionProviderError
 from location_extractor.domain import ExtractionResult, LocationEventCandidate, ParsedMessage
 from location_extractor.evaluation import (
     EvaluationCase,
+    EvaluationCategory,
     ExpectedEvent,
     evaluate_predictions,
     load_evaluation_cases,
@@ -20,6 +21,7 @@ from scripts.run_live_eval import (
     _execute_cases,
     _extract_with_retries,
     _provider_error_category,
+    _select_cases,
 )
 
 FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "extraction_cases.json"
@@ -161,7 +163,7 @@ def test_case_and_prediction_lengths_must_match() -> None:
 
 def test_fixture_dataset_is_english_only_and_covers_core_contrasts() -> None:
     cases = load_evaluation_cases(FIXTURE_PATH)
-    assert len(cases) >= 20
+    assert len(cases) == 64
     assert all(case.text.isascii() for case in cases)
     assert any(len(case.events) > 1 for case in cases)
     assert any(not case.events for case in cases)
@@ -169,6 +171,48 @@ def test_fixture_dataset_is_english_only_and_covers_core_contrasts() -> None:
     certainties = {event.certainty.value for case in cases for event in case.events}
     assert {"AT", "TO", "FROM", "LEFT", "ARRIVED", "NEAR"} <= relations
     assert {"ASSERTED", "PROBABLE", "POSSIBLE", "NEGATED", "PLANNED"} <= certainties
+    assert {case.category for case in cases} == set(EvaluationCategory)
+    assert all(
+        sum(case.category is category for case in cases) >= 5 for category in EvaluationCategory
+    )
+
+
+def test_report_separates_metrics_by_dataset_category() -> None:
+    cases = [
+        EvaluationCase(
+            text="John is in London.",
+            category=EvaluationCategory.PRESENCE,
+            events=[expected("John", "London")],
+        ),
+        EvaluationCase(
+            text="Mary bought a ticket to Paris.",
+            category=EvaluationCategory.TRAVEL_CONTEXT,
+        ),
+    ]
+    report = evaluate_predictions(cases, [[candidate("John", "London")], []])
+
+    assert set(report.categories) == {
+        EvaluationCategory.PRESENCE,
+        EvaluationCategory.TRAVEL_CONTEXT,
+    }
+    assert report.categories[EvaluationCategory.PRESENCE].metrics.whole_event_f1 == 1
+    assert report.categories[EvaluationCategory.TRAVEL_CONTEXT].metrics.abstention_accuracy == 1
+
+
+def test_live_eval_can_select_categories_without_reordering_cases() -> None:
+    cases = load_evaluation_cases(FIXTURE_PATH)
+    selected = _select_cases(cases, ["hypothetical", "travel_context"])
+
+    assert selected
+    assert {case.category for case in selected} == {
+        EvaluationCategory.HYPOTHETICAL,
+        EvaluationCategory.TRAVEL_CONTEXT,
+    }
+    assert selected == [
+        case
+        for case in cases
+        if case.category in {EvaluationCategory.HYPOTHETICAL, EvaluationCategory.TRAVEL_CONTEXT}
+    ]
 
 
 class FlakyExtractor:

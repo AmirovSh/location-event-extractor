@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -17,8 +18,21 @@ class ExpectedEvent(BaseModel):
     certainty: Certainty
 
 
+class EvaluationCategory(StrEnum):
+    PRESENCE = "presence"
+    MOVEMENT = "movement"
+    MODALITY = "modality"
+    ATTRIBUTION = "attribution"
+    MULTIPLE_EVENTS = "multiple_events"
+    TRAVEL_CONTEXT = "travel_context"
+    UNRESOLVED_REFERENCE = "unresolved_reference"
+    HYPOTHETICAL = "hypothetical"
+    NON_PHYSICAL = "non_physical"
+
+
 class EvaluationCase(BaseModel):
     text: str
+    category: EvaluationCategory = EvaluationCategory.PRESENCE
     events: list[ExpectedEvent] = Field(default_factory=list)
 
 
@@ -50,6 +64,16 @@ class EvaluationReport(BaseModel):
     predicted_event_count: int
     validator_rejection_count: int = 0
     provider_error_count: int = 0
+    detection: EvaluationCounts
+    metrics: EvaluationMetrics
+    categories: dict[EvaluationCategory, EvaluationCategoryReport] = Field(default_factory=dict)
+
+
+class EvaluationCategoryReport(BaseModel):
+    case_count: int
+    evaluated_case_count: int
+    expected_event_count: int
+    predicted_event_count: int
     detection: EvaluationCounts
     metrics: EvaluationMetrics
 
@@ -116,6 +140,47 @@ def evaluate_predictions(
     provider_error_count: int = 0,
     provider_error_indices: set[int] | None = None,
 ) -> EvaluationReport:
+    report = _evaluate_predictions(
+        cases, predictions, provider_error_indices=provider_error_indices
+    )
+    categories: dict[EvaluationCategory, EvaluationCategoryReport] = {}
+    excluded = provider_error_indices or set()
+    for category in EvaluationCategory:
+        indices = [index for index, case in enumerate(cases) if case.category is category]
+        if not indices:
+            continue
+        category_report = _evaluate_predictions(
+            [cases[index] for index in indices],
+            [predictions[index] for index in indices],
+            provider_error_indices={
+                local_index
+                for local_index, source_index in enumerate(indices)
+                if source_index in excluded
+            },
+        )
+        categories[category] = EvaluationCategoryReport(
+            case_count=category_report.case_count,
+            evaluated_case_count=category_report.evaluated_case_count,
+            expected_event_count=category_report.expected_event_count,
+            predicted_event_count=category_report.predicted_event_count,
+            detection=category_report.detection,
+            metrics=category_report.metrics,
+        )
+    return report.model_copy(
+        update={
+            "validator_rejection_count": validator_rejection_count,
+            "provider_error_count": provider_error_count,
+            "categories": categories,
+        }
+    )
+
+
+def _evaluate_predictions(
+    cases: list[EvaluationCase],
+    predictions: list[list[LocationEventCandidate]],
+    *,
+    provider_error_indices: set[int] | None = None,
+) -> EvaluationReport:
     if len(cases) != len(predictions):
         raise ValueError("cases and predictions must have the same length")
 
@@ -174,8 +239,8 @@ def evaluate_predictions(
         evaluated_case_count=len(cases) - len(excluded),
         expected_event_count=expected_total,
         predicted_event_count=predicted_total,
-        validator_rejection_count=validator_rejection_count,
-        provider_error_count=provider_error_count,
+        validator_rejection_count=0,
+        provider_error_count=len(excluded),
         detection=EvaluationCounts(
             true_positive=true_positive,
             false_positive=false_positive,

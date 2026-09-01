@@ -15,15 +15,19 @@ Implemented:
 - deterministic English evaluation metrics, an opt-in live evaluation command, and a first local
   `deepseek-v4-flash` baseline;
 - bounded live-evaluation concurrency with stable ordering and latency/retry statistics.
+- a categorized 64-case English regression dataset with per-category quality metrics.
 
 Not active in the current workflow:
 
 - Stanza/NLP pre-filter (`AlwaysPassDetector` is used).
 
-Latest local baseline (2026-09-01, prompt `mvp-3`, schema `1.1`, 4096 output tokens): 23 of 24
-cases received a provider response, event-detection F1 was 1.0, whole-event F1 was 0.970, and
-abstention accuracy was 1.0. One negative case ended with an API timeout after two attempts. This
-small synthetic dataset is a regression baseline, not a production-readiness claim.
+Latest full local baseline (2026-09-01, prompt `mvp-5`, schema `1.1`, 4096 output tokens): 56 of 64
+cases received a provider response, event-detection F1 was 0.985, whole-event F1 was 0.937, and
+abstention accuracy was 0.957. Multiple events, travel context, and hypothetical categories scored
+1.0 in both a focused 18-case run and the full run. The full run had eight API timeouts and one
+non-physical ownership false positive; provider reliability and model variability remain separate
+from semantic scoring. This synthetic dataset is a regression baseline, not a production-readiness
+claim.
 
 A bounded-concurrency run with two request slots completed all 24 cases in 297 seconds with no
 provider failures, four retried cases, event-detection F1 of 0.968, and whole-event F1 of 0.941.
@@ -37,7 +41,8 @@ higher limits remain available as an explicit CLI override for other provider de
 
 ## Next
 
-1. Expand the anonymized English fixture set as production-like edge cases are discovered.
+1. Add anonymized production-like edge cases to the categorized English regression dataset as
+   they are discovered.
 2. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
    makes filtering worthwhile.
 

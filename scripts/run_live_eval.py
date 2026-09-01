@@ -22,6 +22,7 @@ from location_extractor.domain import (  # noqa: E402
 )
 from location_extractor.evaluation import (  # noqa: E402
     EvaluationCase,
+    EvaluationCategory,
     evaluate_predictions,
     load_evaluation_cases,
     summarize_performance,
@@ -50,6 +51,12 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="maximum concurrent provider requests",
     )
+    parser.add_argument(
+        "--category",
+        action="append",
+        choices=[category.value for category in EvaluationCategory],
+        help="run only this category; repeat to select multiple categories",
+    )
     return parser.parse_args()
 
 
@@ -64,7 +71,13 @@ class CaseExecution:
     attempts: int
 
 
-async def run(dataset: Path, output: Path, case_retries: int, concurrency: int) -> None:
+async def run(
+    dataset: Path,
+    output: Path,
+    case_retries: int,
+    concurrency: int,
+    categories: list[str] | None = None,
+) -> None:
     if case_retries < 0:
         raise SystemExit("--case-retries must be non-negative")
     if concurrency < 1:
@@ -74,6 +87,7 @@ async def run(dataset: Path, output: Path, case_retries: int, concurrency: int) 
         raise SystemExit("OpenAI API key is not configured")
 
     cases = load_evaluation_cases(dataset)
+    cases = _select_cases(cases, categories)
     prompt_version, system_prompt = load_extraction_prompt()
     if prompt_version != settings.prompt_version:
         raise SystemExit("configured prompt version does not match prompts.toml")
@@ -132,6 +146,7 @@ async def run(dataset: Path, output: Path, case_retries: int, concurrency: int) 
             "api_mode": settings.openai_api_mode,
             "max_output_tokens": settings.openai_max_output_tokens,
             "dataset": str(dataset),
+            "categories": categories or [category.value for category in EvaluationCategory],
             "generated_at": datetime.now(UTC).isoformat(),
         },
         "report": report.model_dump(mode="json"),
@@ -143,6 +158,15 @@ async def run(dataset: Path, output: Path, case_retries: int, concurrency: int) 
     print(json.dumps(report.model_dump(mode="json"), indent=2))
     print(json.dumps({"performance": performance.model_dump(mode="json")}, indent=2))
     print(f"Detailed report: {output}")
+
+
+def _select_cases(
+    cases: list[EvaluationCase], categories: list[str] | None
+) -> list[EvaluationCase]:
+    if not categories:
+        return cases
+    selected = set(categories)
+    return [case for case in cases if case.category.value in selected]
 
 
 async def _extract_with_retries(
@@ -237,6 +261,7 @@ async def _execute_case(
         accepted_events=accepted_events,
         detail={
             "text": case.text,
+            "category": case.category.value,
             "expected": [event.model_dump(mode="json") for event in case.events],
             "raw_predictions": [event.model_dump(mode="json") for event in raw_events],
             "accepted_predictions": [event.model_dump(mode="json") for event in accepted_events],
@@ -265,5 +290,6 @@ if __name__ == "__main__":
             arguments.output,
             arguments.case_retries,
             arguments.concurrency,
+            arguments.category,
         )
     )

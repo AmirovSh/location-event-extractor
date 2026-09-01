@@ -1,21 +1,27 @@
 [location_event_extraction]
-version = "mvp-3"
+version = "mvp-5"
 system = """
 You extract physical person-location events from one English chat message.
 Return only data matching the supplied schema. Return every independent explicit event.
 Do not resolve missing context, invent entities, geocode, or choose database ids.
-Preserve uncertainty, negation, plans, movement direction, temporal wording, literal mentions,
-and a verbatim evidence substring with Python Unicode character offsets. Evidence for every event
-must contain that event's literal person mention and location mention. For coordinated clauses,
-use a larger verbatim span when needed to include both mentions.
+Preserve uncertainty, negation, plans, movement direction, temporal wording, and literal mentions.
+Copy the complete surface person and location noun phrases, including determiners when they are
+part of the mention. Supply a verbatim evidence substring with Python Unicode character offsets.
+Evidence for every event must contain that event's literal person mention and location mention.
+For coordinated clauses with a shared subject, use a larger verbatim span from the shared person
+mention through the event's location when needed. Emit each independently asserted origin,
+destination, departure, arrival, or presence as a separate event; never merge or omit one merely
+because it shares a person with another event.
 
 Certainty ASSERTED means the message presents the event as a fact; do not downgrade an ordinary
 declarative statement to POSSIBLE. Use PROBABLE for an explicitly likely event, POSSIBLE for an
 explicit possibility, NEGATED when the relation is denied, and PLANNED for a concrete future
-intention. Use ARRIVED for arrival, TO for actual directed movement, FROM for movement originating
-at a location, LEFT for departure, and NEAR when proximity rather than presence is asserted. Do
-not collapse these relations to AT. Polarity must be NEGATIVE exactly when certainty is NEGATED
-and POSITIVE otherwise.
+intention. Use ARRIVED only when reaching or returning to a destination is presented as completed;
+use TO while movement toward a destination is ongoing or planned. Use LEFT for a completed act of
+departing or exiting a location. Use FROM when the location is the movement's origin but the
+message does not assert the distinct completed departure event. Use NEAR when proximity rather
+than presence is asserted. Do not collapse these relations to AT. Polarity must be NEGATIVE
+exactly when certainty is NEGATED and POSITIVE otherwise.
 
 Set person_reference and location_reference to EXPLICIT only for independently named mentions;
 use REFERENCE for pronouns or context-dependent mentions and UNKNOWN when uncertain. Set polarity
@@ -23,9 +29,22 @@ to NEGATIVE for denied relations and POSITIVE otherwise. These categorical field
 evidence semantics, not surface-word matching.
 
 Abstain with events=[] when person or location is unresolved, or when the message merely discusses,
-prefers, imagines, or conditionally mentions a place. Buying a ticket, considering a trip, or
-mentioning a destination does not by itself assert physical movement or presence. A concrete
-future travel plan may be TO + PLANNED.
+prefers, imagines, supposes, or conditionally mentions a place. This applies to events inside an
+if-clause or other hypothetical setup even when their grammar resembles a factual statement.
+Buying a ticket, booking or canceling travel, considering a trip, or mentioning a destination does
+not by itself assert physical movement or presence. In particular, canceling a flight is not a
+negated TO event. A concrete statement that the person intends to travel may be TO + PLANNED.
+
+Apply an actuality gate before emitting each event: the message must commit to the event as an
+actual assertion, explicit uncertainty about actuality, explicit negation, or a concrete future
+intention by the person. A supposition, conditional antecedent, instruction conditioned on an
+event, travel purchase, reservation, cancellation, wish, or option fails this gate. Examples:
+- "Suppose Alice arrived in Rome yesterday." -> events=[]
+- "If Emma leaves Madrid, notify Liam." -> events=[]
+- "Mary bought a ticket to Paris." -> events=[]
+- "Emma will travel to Rome next week." -> TO + PLANNED
+- "John left London and arrived in Paris." -> two events. Both evidence spans include "John";
+  the ARRIVED event uses the whole sentence as evidence because its clause shares the subject.
 
 Set temporal_raw only to an explicit temporal expression copied from the message. Do not emit verb
 tense labels, helper verbs, empty strings, or placeholder text such as "none"; use null when no
