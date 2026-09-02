@@ -5,17 +5,168 @@ product scope; `README.md` explains operation and local development.
 
 ## Architecture
 
-The service is a modular monolith with dependency-inverted boundaries:
+The service is a modular monolith with dependency-inverted boundaries. This document owns the
+detailed process diagrams; the README keeps only a compact project overview.
 
-```text
-ParsedMessage
-  -> LocationCandidateDetector
-  -> LocationEventExtractor
-  -> LocationEventCandidate
-  -> CandidateValidator
-  -> LocationEventRepository
-  -> PostgreSQL
+### End-to-end processing
+
+```mermaid
+flowchart TB
+    Request["ParsedMessage"] --> Replay{"Existing extraction run?"}
+    Replay -->|Yes| Stored["Load persisted outcomes"]
+    Replay -->|No| Detector["LocationCandidateDetector"]
+    Detector --> Extractor["LocationEventExtractor"]
+    Extractor --> Candidate["Typed LocationEventCandidate list"]
+    Candidate --> Validator["CandidateValidator"]
+    Validator --> Persistable{"Persistable?"}
+    Persistable -->|No| Rejection["Persist rejection"]
+    Persistable -->|Yes| Event["Persist LocationEvent and provenance"]
+    Stored --> Accepted["Persisted events"]
+    Event --> Accepted
+    Accepted --> Resolver["Resolve person and location mentions"]
+    Resolver --> Result["ProcessResult with EventResolutionResult"]
+    Rejection --> Result
 ```
+
+Extraction persistence precedes entity resolution. They use separate transactions so replay can
+repair an interrupted resolution phase without duplicating the source message or event.
+
+### Component responsibilities
+
+| Component | Responsibility | Separation reason |
+|---|---|---|
+| `ParsedMessage` | Typed contract for one upstream message | Keeps platform payloads outside the domain |
+| `Settings` and TOML files | Load models, versions, prompts, limits, and deployment overrides | Keeps configuration out of business logic |
+| `LocationExtractionService` | Orchestrate detection, extraction, validation, and persistence | Makes the extraction use case independently testable |
+| `LocationCandidateDetector` | Decide whether extraction is needed | Allows a future measured pre-filter without coupling it to persistence |
+| `LocationEventExtractor` | Produce typed semantic candidates | Isolates provider-specific APIs and types |
+| `CandidateValidator` | Enforce deterministic persistence rules and evidence provenance | Structured output alone cannot enforce business correctness |
+| `LocationEventRepository` | Persist idempotent extraction outcomes | Isolates transactions and SQLAlchemy |
+| `PersistedEventResolutionWorkflow` | Resolve explicit person and location mentions after persistence | Keeps canonical identity outside extraction |
+| `EntityCandidateRetriever` | Return candidates within tenant, type, and scope | Prevents semantic models from expanding the search boundary |
+| Pairwise and candidate-set verifiers | Return typed ID-free semantic verdicts | The model cannot select internal identifiers |
+| `VerifiedResolutionPolicy` | Map validated verdicts to a deterministic decision | Keeps final identity selection in trusted code |
+| `ControlledAliasPromotionPolicy` | Propose narrow aliases from high-confidence decisions | Prevents uncertain outcomes from training future lookup |
+| Resolution repository | Persist entities, aliases, mentions, and reversible decisions | Enforces scope, type, and provenance again at the storage boundary |
+| `ProcessResult` | Return extraction and resolution outcomes | Avoids conflating an event with canonical identity |
+
+### PostgreSQL relationships
+
+```mermaid
+erDiagram
+    SOURCE_MESSAGES {
+        uuid id PK
+        string external_message_id
+        string conversation_id
+        string author_id
+        datetime sent_at
+        string text_hash
+    }
+
+    EXTRACTION_RUNS {
+        uuid id PK
+        uuid source_message_id FK
+        string extractor_version
+        string schema_version
+        string status
+        int latency_ms
+    }
+
+    LOCATION_EVENTS {
+        uuid id PK
+        uuid source_message_id FK
+        uuid extraction_run_id FK
+        string person_mention
+        string location_mention
+        string relation
+        string certainty
+        string polarity
+        string evidence_text
+    }
+
+    EXTRACTION_REJECTIONS {
+        uuid id PK
+        uuid extraction_run_id FK
+        string person_mention
+        string location_mention
+        string rejection_reason
+    }
+
+    CANONICAL_ENTITIES {
+        uuid id PK
+        string tenant_id
+        string entity_type
+        string display_name
+    }
+
+    ENTITY_MENTIONS {
+        uuid id PK
+        uuid source_message_id FK
+        string entity_type
+        string mention_text
+        string normalized_mention
+        string tenant_id
+        string source_id
+        string conversation_id
+        string sender_id
+        string context_hash
+    }
+
+    ENTITY_RESOLUTION_DECISIONS {
+        uuid id PK
+        uuid mention_id FK
+        uuid canonical_entity_id FK
+        uuid supersedes_resolution_id FK
+        string outcome
+        string confidence
+        json candidate_entity_ids
+        json factors
+        string resolver_version
+        boolean active
+    }
+
+    ENTITY_ALIASES {
+        uuid id PK
+        uuid canonical_entity_id FK
+        uuid source_mention_id FK
+        uuid source_resolution_id FK
+        string tenant_id
+        string entity_type
+        string alias
+        string normalized_alias
+        string source_id
+        string conversation_id
+        string sender_id
+        string alias_source
+        boolean active
+    }
+
+    SOURCE_MESSAGES ||--o{ EXTRACTION_RUNS : "processed by"
+    SOURCE_MESSAGES ||--o{ LOCATION_EVENTS : "provenance"
+    EXTRACTION_RUNS ||--o{ LOCATION_EVENTS : "accepts"
+    EXTRACTION_RUNS ||--o{ EXTRACTION_REJECTIONS : "rejects"
+
+    SOURCE_MESSAGES o|--o{ ENTITY_MENTIONS : "mention provenance"
+    ENTITY_MENTIONS ||--o{ ENTITY_RESOLUTION_DECISIONS : "has versions"
+    CANONICAL_ENTITIES o|--o{ ENTITY_RESOLUTION_DECISIONS : "resolved target"
+    ENTITY_RESOLUTION_DECISIONS o|--o{ ENTITY_RESOLUTION_DECISIONS : "supersedes"
+    CANONICAL_ENTITIES ||--o{ ENTITY_ALIASES : "known as"
+    ENTITY_MENTIONS o|--o{ ENTITY_ALIASES : "promoted from"
+    ENTITY_RESOLUTION_DECISIONS o|--o{ ENTITY_ALIASES : "authorized by"
+```
+
+`candidate_entity_ids` is an audit snapshot stored as JSON, not a foreign-key relationship. The
+repository validates every referenced candidate against the mention tenant and entity type before
+writing the decision. A partial unique index permits only one active decision per mention. Each new
+decision can supersede at most one previous decision. The current foreign key does not prevent two
+new rows from referencing the same previous decision, although the repository workflow normally
+creates a linear chain; enforcing a single successor would require an additional unique constraint
+on non-null `supersedes_resolution_id`.
+
+Deletion behavior is deliberate: extraction descendants cascade with their source/run; deleting a
+canonical entity cascades its aliases but is restricted while an active or historical decision
+references it. Deleting message or decision provenance sets the corresponding optional mention or
+alias link to null instead of deleting the resolution history.
 
 The default detector is `AlwaysPassDetector`. Stanza is not currently used; a future detector
 may pre-filter messages only after its recall has been measured. Detector output must never
@@ -29,15 +180,94 @@ deterministically before persistence.
 
 Entity resolution is a post-validation boundary invoked after an accepted event has been persisted:
 
-```text
-validated literal mention
-  -> ResolutionScope tenant filter
-  -> deterministic alias candidate retrieval
-  -> ResolutionCandidate[]
-  -> ResolutionPolicy
-  -> RESOLVED | AMBIGUOUS | NEW_ENTITY | UNRESOLVED
-  -> versioned resolution decision
+```mermaid
+flowchart TB
+    Event["Persisted LocationEvent<br/>literal person and location mentions"]
+    Split{"Mention type"}
+
+    Event --> Split
+    Split -->|PERSON| PersonMention["EntityMention<br/>type: PERSON"]
+    Split -->|LOCATION| LocationMention["EntityMention<br/>type: LOCATION"]
+
+    PersonMention --> Resolution
+    LocationMention --> Resolution
+
+    subgraph Resolution["Entity resolution"]
+        direction TB
+
+        Scope["Build ResolutionScope<br/>tenant · source · conversation · sender"]
+        SaveMention["Persist mention<br/>text · context hash · source message"]
+        Replay{"Active decision<br/>already exists?"}
+
+        Scope --> SaveMention --> Replay
+
+        Replay -->|Yes| ExistingDecision["Reuse active decision"]
+        Replay -->|No| ExactLookup["Scoped exact-alias lookup"]
+
+        ExactLookup --> ExactFound{"Exact candidates<br/>found?"}
+
+        ExactFound -->|Yes| ExactPolicy["Deterministic exact policy"]
+        ExactFound -->|No| SemanticRetrieval["Embedding retrieval<br/>same tenant · type · scope"]
+
+        SemanticRetrieval --> CandidateSet["Bounded candidate set"]
+        CandidateSet --> Pairwise["Pairwise LLM verification<br/>ID-free candidate profiles"]
+        Pairwise --> Confirmed{"Multiple candidates<br/>confirmed?"}
+
+        Confirmed -->|No| FinalPolicy
+        Confirmed -->|Yes| Adjudication["Candidate-set adjudication<br/>temporary positions only"]
+        Adjudication --> FinalPolicy["Deterministic resolution policy"]
+
+        ExactPolicy --> Decision
+        FinalPolicy --> Decision["ResolutionDecision"]
+    end
+
+    ExistingDecision --> Outcome
+    Decision --> SaveDecision["Persist versioned decision"]
+    SaveDecision --> Outcome{"Resolution outcome"}
+
+    Outcome -->|RESOLVED| Resolved["Canonical entity selected"]
+    Outcome -->|AMBIGUOUS| Ambiguous["Multiple plausible entities"]
+    Outcome -->|UNRESOLVED| Unresolved["No justified entity"]
+    Outcome -->|Provider failure| ProviderFailure["UNRESOLVED<br/>factor: PROVIDER_FAILURE"]
+
+    Resolved --> PromotionCheck
+
+    subgraph Promotion["Controlled alias promotion"]
+        direction TB
+
+        PromotionCheck{"Eligible for promotion?"}
+        HighConfidence["RESOLVED + HIGH confidence"]
+        SemanticProof["PAIRWISE_VERIFICATION present"]
+        FullScope["Preserve complete incoming scope"]
+        Provenance["Attach mention and decision IDs"]
+        RepositoryCheck{"Repository invariants pass?"}
+        SaveAlias["Persist AUTO_RESOLUTION alias"]
+        SkipAlias["Do not create alias"]
+
+        PromotionCheck --> HighConfidence
+        HighConfidence -->|No| SkipAlias
+        HighConfidence -->|Yes| SemanticProof
+        SemanticProof -->|No| SkipAlias
+        SemanticProof -->|Yes| FullScope
+        FullScope --> Provenance
+        Provenance --> RepositoryCheck
+        RepositoryCheck -->|Valid and new| SaveAlias
+        RepositoryCheck -->|Duplicate or conflict| SkipAlias
+    end
+
+    SaveAlias --> FutureLookup["Future identical scoped mention"]
+    FutureLookup --> ExactLookup
+
+    Ambiguous --> Result
+    Unresolved --> Result
+    ProviderFailure --> Result
+    SkipAlias --> Result
+    SaveAlias --> Result["EventResolutionResult<br/>person result + location result"]
 ```
+
+If embedding or verification is unavailable, the workflow saves `UNRESOLVED` with the
+`PROVIDER_FAILURE` factor. Repository and programming errors are not converted into semantic
+abstentions.
 
 `PERSON` and `LOCATION` share orchestration contracts but never share candidates. Tenant is a hard
 security boundary. Source, conversation, and sender are optional scope dimensions: a scoped alias
