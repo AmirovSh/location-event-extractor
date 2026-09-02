@@ -10,10 +10,9 @@ sensitive data.
 
 Before changing code, read these files in order:
 
-1. `TASK.md`
-2. `docs/DESIGN.md`
-3. `docs/ROADMAP.md`
-4. `README.md`
+1. `docs/DESIGN.md`
+2. `docs/ROADMAP.md`
+3. `README.md`
 
 ## Engineering rules
 
@@ -64,5 +63,6 @@ Every bug fix must add a regression test. Separate LLM-dependent logic into:
 
 ## Stop conditions
 
-Do not expand scope beyond `TASK.md`. If an ambiguity is discovered, choose the smallest solution
-compatible with `docs/DESIGN.md` and document any architecturally significant assumption there.
+Do not expand scope beyond the current MVP and roadmap boundaries documented in `docs/DESIGN.md`
+and `docs/ROADMAP.md`. If an ambiguity is discovered, choose the smallest compatible solution and
+document any architecturally significant assumption in `docs/DESIGN.md`.

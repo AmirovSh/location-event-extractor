@@ -1,7 +1,7 @@
 # Design
 
-This document is the compact technical specification for the MVP. `TASK.md` defines the
-product scope; `README.md` explains operation and local development.
+This document is the compact technical specification and scope reference for the MVP. `README.md`
+explains operation and local development; `docs/ROADMAP.md` tracks planned extensions.
 
 ## Architecture
 
@@ -40,7 +40,7 @@ repair an interrupted resolution phase without duplicating the source message or
 | `LocationExtractionService` | Orchestrate detection, extraction, validation, and persistence | Makes the extraction use case independently testable |
 | `LocationCandidateDetector` | Decide whether extraction is needed | Allows a future measured pre-filter without coupling it to persistence |
 | `LocationEventExtractor` | Produce typed semantic candidates | Isolates provider-specific APIs and types |
-| `CandidateValidator` | Enforce deterministic persistence rules and evidence provenance | Structured output alone cannot enforce business correctness |
+| `CandidateValidator` | Validate completeness, typed-field consistency, and evidence provenance | Structured output alone cannot enforce business correctness |
 | `LocationEventRepository` | Persist idempotent extraction outcomes | Isolates transactions and SQLAlchemy |
 | `PersistedEventResolutionWorkflow` | Resolve explicit person and location mentions after persistence | Keeps canonical identity outside extraction |
 | `EntityCandidateRetriever` | Return candidates within tenant, type, and scope | Prevents semantic models from expanding the search boundary |
@@ -163,6 +163,12 @@ new rows from referencing the same previous decision, although the repository wo
 creates a linear chain; enforcing a single successor would require an additional unique constraint
 on non-null `supersedes_resolution_id`.
 
+Tenant isolation is currently enforced inside the entity-resolution tables and repository queries.
+`source_messages` does not yet store `tenant_id`; its external identity is unique by
+`conversation_id + external_message_id`. Therefore the current schema must not be described as
+providing end-to-end tenant isolation when different tenants may reuse those identifiers. Adding
+tenant to source-message identity and idempotency is required before making that broader guarantee.
+
 Deletion behavior is deliberate: extraction descendants cascade with their source/run; deleting a
 canonical entity cascades its aliases but is restricted while an active or historical decision
 references it. Deleting message or decision provenance sets the corresponding optional mention or
@@ -219,6 +225,11 @@ flowchart TB
 
         ExactPolicy --> Decision
         FinalPolicy --> Decision["ResolutionDecision"]
+
+        SemanticRetrieval -. provider failure .-> ProviderFailure
+        Pairwise -. provider failure .-> ProviderFailure
+        Adjudication -. provider failure .-> ProviderFailure
+        ProviderFailure["UNRESOLVED decision<br/>factor: PROVIDER_FAILURE"] --> Decision
     end
 
     ExistingDecision --> Outcome
@@ -228,7 +239,6 @@ flowchart TB
     Outcome -->|RESOLVED| Resolved["Canonical entity selected"]
     Outcome -->|AMBIGUOUS| Ambiguous["Multiple plausible entities"]
     Outcome -->|UNRESOLVED| Unresolved["No justified entity"]
-    Outcome -->|Provider failure| ProviderFailure["UNRESOLVED<br/>factor: PROVIDER_FAILURE"]
 
     Resolved --> PromotionCheck
 
@@ -260,7 +270,6 @@ flowchart TB
 
     Ambiguous --> Result
     Unresolved --> Result
-    ProviderFailure --> Result
     SkipAlias --> Result
     SaveAlias --> Result["EventResolutionResult<br/>person result + location result"]
 ```
@@ -270,9 +279,10 @@ If embedding or verification is unavailable, the workflow saves `UNRESOLVED` wit
 abstentions.
 
 `PERSON` and `LOCATION` share orchestration contracts but never share candidates. Tenant is a hard
-security boundary. Source, conversation, and sender are optional scope dimensions: a scoped alias
-is eligible only when every dimension recorded on that alias matches the incoming mention. A more
-specific exact alias outranks a tenant-wide alias; equally specific winners remain ambiguous.
+boundary for entity candidate retrieval and resolution persistence. Source, conversation, and
+sender are optional scope dimensions: a scoped alias is eligible only when every dimension recorded
+on that alias matches the incoming mention. A more specific exact alias outranks a tenant-wide
+alias; equally specific winners remain ambiguous.
 
 The first retriever performs Unicode normalization, case folding, whitespace normalization, and
 exact alias lookup. It contains no English word lists or fuzzy merge rules. This is the measurable
@@ -306,8 +316,8 @@ with different purposes, and unsupported hard negatives. Across three live runs,
 top-1 accuracy 1.0 while `bge-reranker-v2-m3` consistently reached 0.941 by confusing `central
 branch` with a logistics hub. The maximum reranker score on an unresolved case was about 0.976,
 which also rules out a simple absolute-score threshold. Both modes retained recall@3 1.0 and zero
-tenant/type leakage. Reranking therefore remains experimental and automatic semantic links remain
-disabled; a deterministic acceptance policy cannot yet be justified by these scores.
+tenant/type leakage. Reranking therefore remains experimental and reranker-driven links remain
+disabled; its scores do not justify an automatic acceptance policy.
 
 For synthetic functional proof, semantic confirmation uses two typed stages. Pairwise verification
 classifies each ID-free mention/profile pair as `SAME_ENTITY`, `DIFFERENT_ENTITY`, or `UNCERTAIN`.
@@ -429,7 +439,9 @@ public API boundary.
 
 Location data is sensitive. Store only required fields, keep secrets in environment variables,
 and do not log complete messages or plaintext person-location pairs. Logs use identifiers, hashes,
-lengths, typed outcomes, and latency. Only the current message is sent to the configured provider.
+lengths, typed outcomes, and latency. Extraction sends only the current message. Entity resolution
+may additionally send bounded current-message context and eligible ID-free canonical names and
+aliases; it does not send database identifiers or previous full messages.
 
 HTTPS is the default provider transport. Plain HTTP requires explicit configuration and is only
 intended for a trusted internal network accepted by the deployment owner. Production deployment

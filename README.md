@@ -1,8 +1,8 @@
 # Location Event Extractor
 
-Backend MVP that converts one already-parsed chat message into auditable, typed
-person-location events. The LLM only produces candidates; deterministic code validates
-explicit mentions and evidence before PostgreSQL persistence.
+Backend MVP that converts one already-parsed chat message into auditable, typed person-location
+events. The LLM produces typed event candidates; deterministic code validates candidate
+completeness, typed-field consistency, and evidence provenance before PostgreSQL persistence.
 
 The current extraction contract, test suite, and evaluation dataset are English-only.
 Reference and polarity decisions are represented as typed semantic fields; validation does not
@@ -12,116 +12,62 @@ extension.
 Detailed technical rules and decisions are consolidated in [docs/DESIGN.md](docs/DESIGN.md).
 Current progress and planned extensions are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Contextual entity resolution foundation
+## What processing produces
 
-The persisted extraction workflow can resolve person and location mentions without allowing a
-model to mutate canonical identity:
+For every accepted statement, the service records an auditable location event and its supporting
+metadata:
 
-```text
-EntityMention + ResolutionScope
-  -> scoped exact-alias retrieval
-  -> ResolutionCandidate[]
-  -> deterministic policy
-  -> RESOLVED | AMBIGUOUS | UNRESOLVED
-  -> reversible versioned decision
-```
+- the person and location exactly as mentioned in the message;
+- a typed relation such as `AT`, `TO`, `FROM`, `ARRIVED`, or `LEFT`;
+- certainty, polarity, the raw time expression, and the source timestamp;
+- the exact evidence span that supports the event;
+- provenance linking the event to its source message and extraction run.
 
-Tenant is a hard boundary. Source, conversation, and sender may narrow an alias; scoped aliases do
-not leak into unrelated contexts. PostgreSQL stores canonical entities, aliases, mention provenance,
-and append-oriented decisions. Superseding a decision deactivates the old link instead of deleting
-or rewriting it. The original literal mention on `location_events` remains unchanged.
+Person and location mentions are then resolved independently. When the available evidence is
+sufficient, the result includes their canonical entity IDs. When it is not, the result explicitly
+remains `AMBIGUOUS` or `UNRESOLVED`; the service does not invent an identity. The original literal
+mentions are preserved even after successful resolution.
 
-Exact scoped aliases are resolved deterministically. Otherwise the hybrid retriever ranks eligible
-same-tenant candidates with embeddings and the verifier evaluates ID-free profiles; deterministic
-policy alone maps a validated temporary position to a UUID. Unicode form, case, and whitespace are
-normalized generically; there are no person/location word lists. The separate
-English fixture at `tests/fixtures/resolution_cases.json` covers tenant isolation, ambiguity,
-person/location type separation, and source/conversation/sender scoping. Embedding and reranker
-models remain behind ports and no vectors are persisted. The evaluated reranker is not active.
+| Processing result | Example |
+|---|---|
+| Source statement | `John S. is at the downtown branch.` |
+| Extracted event | person `John S.`, relation `AT`, location `the downtown branch` |
+| Semantic details | asserted, positive, with an evidence span and source time |
+| Resolution | person and location each receive a canonical ID only when justified |
+| Stored audit trail | source hash, extraction run, event, mentions, and resolution decisions |
 
-Run the deterministic resolution baseline without network or model access:
+## How it works
 
-```bash
-python scripts/run_resolution_eval.py
-```
+1. The LLM converts the current English message into typed event candidates.
+2. Deterministic validation checks required fields, enum consistency, and evidence provenance.
+3. Accepted events and rejected candidates are persisted separately in PostgreSQL.
+4. Entity resolution searches only eligible person or location records within the configured
+   context. Models may rank or compare candidates, but deterministic code owns final database IDs.
+5. High-confidence semantic matches may create a narrowly scoped alias with full provenance, making
+   later mentions resolvable without discarding the original wording.
 
-The ignored detailed report is written to `evaluation-results/resolution-baseline.json`. It reports
-candidate recall@1/3, candidate-set recall, top-1 and outcome accuracy, resolved precision,
-automatic-resolution coverage, ambiguity/unresolved accuracy, and tenant/type leakage. The bundled
-24-case dataset includes semantic challenges, same-name people, similarly named locations, and hard
-negatives that exact alias lookup intentionally cannot resolve. Semantic retrieval must improve
-ranking without reducing resolved precision or allowing any tenant/type leakage.
+Processing is idempotent for the same source message and extractor/schema version. Provider failure
+does not force an identity choice, and resolution decisions can be superseded without rewriting the
+original event. Detailed workflows, data relationships, and resolution rules are documented in
+[docs/DESIGN.md](docs/DESIGN.md); evaluated capabilities and planned work are tracked in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
-Run the opt-in OpenAI-compatible embedding comparison:
+## Using events to track a person's location
 
-```bash
-$env:LOCATION_ALLOW_INSECURE_HTTP="true"  # trusted internal HTTP only
-$env:LOCATION_OPENAI_TRUST_ENV="false"
-$env:LOCATION_EMBEDDING_MODEL="bge-m3"
-python scripts/run_embedding_resolution_eval.py --top-k 3
-```
+The persisted events provide the input for a current-location or movement-history view. A consumer
+can group events by the resolved canonical person, order them by source time, and apply domain rules
+to their typed meaning:
 
-The hybrid retriever always prefers deterministic exact aliases. Only when none match does it send
-the bounded mention/context and same-scope candidate documents to the embedder. Embedding-only
-candidates remain `UNRESOLVED`; this phase measures retrieval and does not enable model-driven
-identity links. On the expanded 24-case fixture, `bge-m3` reached candidate recall@1/3 and top-1
-accuracy of 1.0 while preserving resolved precision 1.0 and zero tenant/type leakage.
+- positive, asserted `AT` or completed `ARRIVED` events can establish presence;
+- `LEFT` events can end previously established presence;
+- `TO`, planned, or possible events describe movement or intent rather than confirmed presence;
+- negated events are negative evidence and must not establish a location;
+- ambiguous or unresolved identities remain visible for review but must not be silently merged.
 
-Compare embedding-only retrieval with the optional reranker:
-
-```powershell
-$env:LOCATION_ALLOW_INSECURE_HTTP="true"  # trusted internal HTTP only
-$env:LOCATION_OPENAI_TRUST_ENV="false"
-python scripts/run_reranker_resolution_eval.py `
-  --embedding-model bge-m3 `
-  --reranker-model bge-reranker-v2-m3 `
-  --runs 3
-```
-
-The ignored report is written to `evaluation-results/reranker-resolution-eval.json`. Reranking is
-limited to candidates already filtered by tenant, entity type, and scope. Exact aliases bypass both
-models. The report includes correct-candidate score margins, unresolved-case top scores, and one
-summary per repeated run. On the expanded fixture embedding top-1 remained 1.0 while reranker top-1
-was consistently 0.941; recall@3 stayed 1.0 and leakage remained zero. An unresolved case received a
-reranker score near 0.976, so neither reranking nor a simple score threshold is approved for
-automatic linking.
-
-Run the synthetic pairwise-verifier functional evaluation:
-
-```powershell
-$env:LOCATION_ALLOW_INSECURE_HTTP="true"
-$env:LOCATION_OPENAI_TRUST_ENV="false"
-$env:LOCATION_OPENAI_API_MODE="chat_completions"
-$env:LOCATION_OPENAI_ENABLE_THINKING="false"
-python scripts/run_resolution_verifier_eval.py `
-  --embedding-model bge-m3 `
-  --verifier-model deepseek-v4-flash `
-  --top-k 3 `
-  --concurrency 2
-```
-
-The verifier receives one mention/context and ID-free candidate profiles. Multiple pairwise
-confirmations trigger comparative adjudication over temporary candidate positions; deterministic
-code alone maps a validated position to an internal UUID. The report is written to
-`evaluation-results/resolution-verifier-eval.json`. The final blind run on 24 prepared synthetic
-cases reached outcome accuracy and resolved precision 1.0 with zero leakage. The same policy is now
-available after event persistence when resolution is enabled.
-
-Run the autonomous synthetic extraction-to-PostgreSQL slice:
-
-```powershell
-python scripts/run_vertical_slice.py
-```
-
-The ten-message, eleven-event fixture exercises explicit person/location extraction, ambiguity,
-partial resolution, multiple events, tenant isolation, provider failure reporting, durable
-provenance, and idempotent replay. It seeds only canonical identities and aliases; extraction and
-non-exact linking still use the configured providers. A repeated run reuses stored events and active
-decisions without new verifier calls. Provider failures are counted and do not abort the batch.
-
-High-confidence semantic resolutions may promote the literal mention into a narrowly scoped alias.
-Each promoted alias retains its source mention and resolution decision. Exact, medium-confidence,
-ambiguous, unresolved, and provider-failure outcomes never produce aliases.
+Every derived location should retain links to the underlying events and evidence so that it can be
+explained or recomputed. The project currently provides extraction, persistence, and entity
+resolution; a dedicated current-location projection with conflict and recency policies is planned,
+not yet part of the MVP.
 
 ## Local setup
 
@@ -134,7 +80,7 @@ pip install -e ".[dev]"
 docker compose up -d postgres
 $env:LOCATION_DATABASE_URL="postgresql+psycopg://location:location@localhost:55432/location"
 $env:LOCATION_OPENAI_API_KEY="..."
-alembic upgrade head
+python -m alembic upgrade head
 uvicorn location_extractor.api:app --reload
 ```
 
@@ -215,7 +161,7 @@ All variables use the `LOCATION_` prefix:
 | `SCHEMA_VERSION` | `1.1` | Structured contract version |
 | `PROMPT_VERSION` | `mvp-5` | Provider instruction version |
 | `OPENAI_API_KEY` | unset | Required for the OpenAI backend |
-| `OPENAI_BASE_URL` | OpenAI default | OpenAI-compatible Responses API base URL |
+| `OPENAI_BASE_URL` | OpenAI default | OpenAI-compatible base URL used by the configured API mode |
 | `ALLOW_INSECURE_HTTP` | `false` | Explicit opt-in for trusted-network HTTP endpoints |
 | `OPENAI_TRUST_ENV` | `true` | Honor HTTP proxy environment variables |
 | `OPENAI_API_MODE` | `responses` | `responses` or compatible `chat_completions` |
@@ -251,9 +197,11 @@ The service also reads `.env.runtime`. For compatibility, `OPENAI_API_KEY` and
 `LOCATION_ALLOW_INSECURE_HTTP=true`. Set `LOCATION_OPENAI_TRUST_ENV=false` when the corporate
 endpoint must bypass the process proxy.
 
-Only the current message is sent to the provider. Logs omit message text and plaintext
-person-location pairs. The database stores message metadata and SHA-256 rather than full source
-text; bounded evidence substrings are retained for provenance.
+Extraction sends only the current message. Resolution may additionally send bounded context from
+that message and eligible ID-free canonical names and aliases; it sends neither database identifiers
+nor previous full messages. Logs omit message text and plaintext person-location pairs. The database
+stores message metadata and SHA-256 rather than full source text; bounded evidence substrings are
+retained for provenance.
 
 ## Quality gates
 

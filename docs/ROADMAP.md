@@ -45,14 +45,14 @@ non-physical ownership false positive; provider reliability and model variabilit
 from semantic scoring. This synthetic dataset is a regression baseline, not a production-readiness
 claim.
 
-Deterministic entity-resolution baseline (2026-09-02, `scoped-exact-alias-v1`, 16 cases):
-candidate recall@1/3 and top-1 accuracy were 0.636, candidate-set recall was 0.714, outcome accuracy
-was 0.750, and automatic-resolution coverage was 0.438. Resolved precision, ambiguity accuracy,
-and unresolved accuracy were 1.0; tenant and entity-type leakage counts were zero. Four semantic
-challenge cases remain unresolved by design and define the target for embedding retrieval.
+Deterministic entity-resolution baseline (2026-09-02, `scoped-exact-alias-v1`, 24 cases): candidate
+recall@1/3 and top-1 accuracy are 0.412, candidate-set recall is 0.500, outcome accuracy is 0.583,
+and automatic-resolution coverage is 0.292. Resolved precision, ambiguity accuracy, and unresolved
+accuracy are 1.0; tenant and entity-type leakage counts are zero. Semantic challenge cases remain
+unresolved by design and define the target for embedding retrieval and verification.
 
 Embedding retrieval baseline (2026-09-02, `bge-m3`, exact-first, top-K 3): candidate recall@1/3,
-candidate-set recall, and top-1 accuracy reached 1.0 on the same 16 cases. Resolved precision,
+candidate-set recall, and top-1 accuracy reached 1.0 on the 24-case fixture. Resolved precision,
 ambiguity accuracy, and unresolved accuracy remained 1.0 with zero tenant/type leakage. Outcome
 accuracy stayed 0.750 and automatic coverage stayed 0.438 by design: embedding-only candidates are
 retrieved but cannot yet create an automatic resolution decision.
@@ -88,26 +88,29 @@ higher limits remain available as an explicit CLI override for other provider de
 
 ## Next
 
-1. Add anonymized production-like edge cases to the categorized English regression dataset as
-   they are discovered.
-2. Continue expanding the autonomous vertical-slice fixture beyond its current ambiguity, multiple
-   events, provider failure, partial-resolution, and tenant-isolation cases.
-3. Add more independently sourced or anonymized production-like resolution cases before making any
-   non-synthetic release claim.
-4. Define an evidence-based deterministic automatic-link policy only if a broader evaluation
-   demonstrates safe precision and ambiguity separation.
-5. Define production release criteria for the integrated resolution behavior; current evidence is
-   synthetic and proves architecture/functionality rather than production readiness.
-6. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
-   makes filtering worthwhile.
+1. **Process message histories.** Process multiple messages while preserving their order, timestamps,
+   sender context, and idempotency.
+2. **Build an event timeline.** Combine extracted events from multiple messages into an ordered
+   history. Multiple events from one message are already supported.
+3. **Prepare pluggable semantic retrieval.** Define a common candidate-retrieval interface and index
+   format for people and locations.
+4. **Evaluate Qdrant and OpenSearch.** Compare them with PostgreSQL for semantic retrieval, filtered
+   queries, latency, and operational complexity.
+5. **Evaluate NLP-assisted routing.** Measure whether Stanza or another lightweight model can reduce
+   unnecessary LLM calls without losing relevant messages.
+6. **Optimize message processing.** Evaluate concurrency, batch persistence, embedding caches, and
+   request deduplication.
+7. **Expand functional evaluation.** Cover message histories, entity resolution, corrections,
+   timelines, and current-location results.
 
 ## Post-MVP
 
-1. Canonical location hierarchy and reviewed widening of promoted alias scopes.
-2. Bounded person coreference over dialogue context.
-3. Location/deictic coreference over dialogue context.
-4. Relative-time normalization while preserving the raw expression.
-5. Conflict and correction handling plus a derived current-location read model.
-6. Human review, versioned reprocessing, quality monitoring, and drift detection.
-7. Add other languages through explicit language-specific datasets, prompts, evaluation
-   baselines, and release criteria; do not assume English quality transfers automatically.
+1. Human-review workflows for ambiguous events and entity-resolution decisions.
+2. Production quality monitoring, drift detection, alerts, and release criteria.
+3. Large-scale versioned reprocessing and operational migration tooling.
+4. Retention, access-control, and audit policies for production-sensitive message data.
+5. Canonical geographic hierarchy and reviewed widening of promoted alias scopes when required by
+   demonstrated use cases.
+6. Additional languages with language-specific datasets, prompts, evaluation baselines, and release
+   criteria; do not assume English quality transfers automatically.
+7. Infrastructure scaling beyond the modular monolith only after workload measurements justify it.
