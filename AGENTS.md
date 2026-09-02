@@ -2,11 +2,13 @@
 
 ## Mission
 
-Реализовать надежный сервис, который превращает сообщения чата в проверяемые структурированные события о местоположении человека. Приоритет: корректность, трассируемость, возможность расширения и безопасная работа с чувствительными данными.
+Build a reliable service that converts chat messages into verifiable structured events about a
+person's location. Priorities: correctness, traceability, extensibility, and safe handling of
+sensitive data.
 
 ## Read first
 
-Перед изменением кода прочитай в таком порядке:
+Before changing code, read these files in order:
 
 1. `TASK.md`
 2. `docs/DESIGN.md`
@@ -15,48 +17,52 @@
 
 ## Engineering rules
 
-- Не позволяй LLM напрямую изменять бизнес-состояние или выбирать окончательные DB identifiers.
-- Сначала создавай typed candidate, затем валидируй/нормализуй deterministic code, затем persist.
-- Любой сохраненный факт должен иметь provenance до исходного сообщения и evidence span.
-- Система обязана уметь вернуть `unknown` / `ambiguous`; не форсируй догадки.
-- MVP: одно сообщение, explicit person, explicit location. Не реализовывай full dialogue coreference раньше базовой версии.
-- Stanza используй только за интерфейсом. Она не должна быть жестко связана с доменной логикой.
-- Не делай premature microservices. Для MVP — modular monolith с четкими interfaces.
-- Не добавляй vector DB, graph DB, Kafka или отдельный orchestration framework без доказанной необходимости.
-- Любая новая зависимость должна иметь конкретное назначение и минимальный blast radius.
-- Изменения схемы БД — только через миграции.
-- Публичные модели API не должны быть ORM-моделями.
+- Never allow the LLM to modify business state directly or select final database identifiers.
+- First create a typed candidate, then validate and normalize it with deterministic code, and only
+  then persist it.
+- Every persisted fact must retain provenance to the source message and evidence span.
+- The system must be able to return `unknown` or `ambiguous`; never force a guess.
+- MVP: one message, explicit person, explicit location. Do not implement full dialogue coreference
+  before the basic version.
+- Use Stanza only behind an interface. It must not be tightly coupled to domain logic.
+- Avoid premature microservices. Use a modular monolith with clear interfaces for the MVP.
+- Do not add a vector database, graph database, Kafka, or a separate orchestration framework without
+  demonstrated need.
+- Every new dependency must have a specific purpose and minimal blast radius.
+- Change the database schema only through migrations.
+- Public API models must not be ORM models.
 
 ## Quality gates
 
-Перед завершением изменений:
+Before completing changes:
 
-- formatter/linter проходят;
-- type checks проходят, если настроены;
-- unit tests проходят;
-- integration tests проходят;
-- новые branches extraction покрыты тестами;
-- новые поля LLM schema имеют backward-compatible обработку или версионирование;
-- логи не содержат секретов и полного текста сообщения по умолчанию;
-- `git diff` проверен на accidental changes.
+- formatter and linter pass;
+- type checks pass when configured;
+- unit tests pass;
+- integration tests pass;
+- tests cover new extraction branches;
+- new LLM schema fields have backward-compatible handling or explicit versioning;
+- logs contain neither secrets nor full message text by default;
+- inspect `git diff` for accidental changes.
 
 ## Preferred implementation style
 
-- Малые функции и явные типы.
-- Dependency inversion для LLM provider, repository, NLP prefilter и clock.
-- Pydantic models для boundaries/contracts.
-- Domain enums вместо неограниченных строк.
-- UTC внутри системы; исходный timezone и raw time expression сохранять отдельно.
-- Idempotency по `source_message_id + extractor_version` или эквивалентному ключу.
+- Small functions and explicit types.
+- Dependency inversion for the LLM provider, repository, NLP pre-filter, and clock.
+- Pydantic models at boundaries and for contracts.
+- Domain enums instead of unconstrained strings.
+- Use UTC internally; preserve the original timezone and raw time expression separately.
+- Idempotency by `source_message_id + extractor_version` or an equivalent key.
 
 ## Tests
 
-Каждый bug fix должен добавлять regression test. Для LLM-dependent logic разделяй:
+Every bug fix must add a regression test. Separate LLM-dependent logic into:
 
-- deterministic unit tests без сети;
-- provider adapter tests с mock/fake;
-- optional live evals, которые не входят в обязательный CI.
+- deterministic unit tests without network access;
+- provider adapter tests with mocks or fakes;
+- optional live evaluations that are not part of required CI.
 
 ## Stop conditions
 
-Не расширяй scope за пределы `TASK.md`. Если обнаружена неоднозначность, выбирай минимальное решение, совместимое с `docs/DESIGN.md`, и документируй архитектурно значимое допущение там же.
+Do not expand scope beyond `TASK.md`. If an ambiguity is discovered, choose the smallest solution
+compatible with `docs/DESIGN.md` and document any architecturally significant assumption there.
