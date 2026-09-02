@@ -1,0 +1,340 @@
+{
+  "entities": [
+    {
+      "id": "00000000-0000-0000-0000-000000000101",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "PERSON",
+      "display_name": "John Smith",
+      "aliases": [
+        {"alias": "John", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "operations lead", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "the boss", "scope": {"tenant_id": "tenant-alpha", "sender_id": "sender-1"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000102",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "PERSON",
+      "display_name": "John Carter",
+      "aliases": [
+        {"alias": "John", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "John", "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-carter"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000103",
+      "tenant_id": "tenant-beta",
+      "entity_type": "PERSON",
+      "display_name": "John Brown",
+      "aliases": [
+        {"alias": "John", "scope": {"tenant_id": "tenant-beta"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000201",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "Downtown Office",
+      "aliases": [
+        {"alias": "downtown office", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "central city office", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "downtown central branch office", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "the office", "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-ops"}},
+        {"alias": "HQ", "scope": {"tenant_id": "tenant-alpha", "source_id": "slack"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000202",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "North Warehouse",
+      "aliases": [
+        {"alias": "northern storage depot", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "the office", "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-logistics"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000104",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "PERSON",
+      "display_name": "Alex Lee (Operations)",
+      "aliases": [
+        {"alias": "operations manager", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "warehouse coordinator", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000105",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "PERSON",
+      "display_name": "Alex Lee (Design)",
+      "aliases": [
+        {"alias": "design lead", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "product designer", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000203",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "Central Logistics Hub",
+      "aliases": [
+        {"alias": "freight terminal", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "distribution center", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000204",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "Central Community Hub",
+      "aliases": [
+        {"alias": "civic center", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "community center", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000205",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "North Research Campus",
+      "aliases": [
+        {"alias": "R&D campus", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "laboratory complex", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000206",
+      "tenant_id": "tenant-alpha",
+      "entity_type": "LOCATION",
+      "display_name": "North Sales Office",
+      "aliases": [
+        {"alias": "regional sales branch", "scope": {"tenant_id": "tenant-alpha"}},
+        {"alias": "northern commercial office", "scope": {"tenant_id": "tenant-alpha"}}
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "ambiguous tenant-wide person alias",
+      "mention": "John",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha"},
+      "expected_outcome": "AMBIGUOUS",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000101", "00000000-0000-0000-0000-000000000102"]
+    },
+    {
+      "name": "conversation alias outranks tenant aliases",
+      "mention": "John",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-carter"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000102", "00000000-0000-0000-0000-000000000101"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000102"
+    },
+    {
+      "name": "tenant boundary excludes same alias elsewhere",
+      "mention": "John",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-beta"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000103"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000103"
+    },
+    {
+      "name": "unicode and whitespace normalization",
+      "mention": "  DOWNTOWN   OFFICE  ",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000201"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000201"
+    },
+    {
+      "name": "conversation scopes a location alias",
+      "mention": "the office",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-ops"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000201"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000201"
+    },
+    {
+      "name": "same words resolve differently in another conversation",
+      "mention": "the office",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-logistics"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000202"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000202"
+    },
+    {
+      "name": "scoped aliases do not leak to unrelated conversations",
+      "mention": "the office",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-other"},
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    },
+    {
+      "name": "entity type prevents person-location collision",
+      "mention": "downtown office",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha"},
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    },
+    {
+      "name": "sender-scoped person alias",
+      "mention": "the boss",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "sender_id": "sender-1"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000101"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000101"
+    },
+    {
+      "name": "sender-scoped alias does not leak",
+      "mention": "the boss",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "sender_id": "sender-2"},
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    },
+    {
+      "name": "source-scoped location alias",
+      "mention": "HQ",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "source_id": "slack"},
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000201"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000201"
+    },
+    {
+      "name": "source-scoped alias does not leak",
+      "mention": "HQ",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "source_id": "email"},
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    },
+    {
+      "name": "abbreviated person mention needs semantic retrieval",
+      "mention": "John S.",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-general"},
+      "context": "John S., the operations lead, is meeting the operations team.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000101"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000101"
+    },
+    {
+      "name": "semantically similar office mention needs retrieval",
+      "mention": "central branch",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-ops"},
+      "context": "Emma is working from the downtown central branch office today.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000201"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000201"
+    },
+    {
+      "name": "descriptive warehouse mention needs retrieval",
+      "mention": "warehouse up north",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-logistics"},
+      "context": "Noah arrived at the warehouse up north.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000202"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000202"
+    },
+    {
+      "name": "context must disambiguate a shared first name",
+      "mention": "John from operations",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-ops"},
+      "context": "John from operations will join the warehouse inspection.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000101"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000101"
+    },
+    {
+      "name": "same-name operations person requires occupational context",
+      "mention": "Alex Lee from the warehouse team",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Alex Lee from the warehouse team approved the loading schedule.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000104"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000104"
+    },
+    {
+      "name": "same-name designer requires occupational context",
+      "mention": "Alex Lee from product design",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Alex Lee from product design presented the new interface.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000105"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000105"
+    },
+    {
+      "name": "same-name person without supporting context stays unresolved",
+      "mention": "Alex Lee from legal",
+      "entity_type": "PERSON",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Alex Lee from legal will review the agreement.",
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    },
+    {
+      "name": "logistics hub requires freight context",
+      "mention": "central hub for freight shipments",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "The driver arrived at the central hub for freight shipments.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000203"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000203"
+    },
+    {
+      "name": "community hub requires civic context",
+      "mention": "central hub for neighborhood events",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Maya is at the central hub for neighborhood events.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000204"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000204"
+    },
+    {
+      "name": "research campus requires laboratory context",
+      "mention": "north site used by the laboratory team",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Priya is working at the north site used by the laboratory team.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000205"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000205"
+    },
+    {
+      "name": "sales office requires commercial context",
+      "mention": "north site for regional sales",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Owen reached the north site for regional sales.",
+      "expected_outcome": "RESOLVED",
+      "expected_candidate_ids": ["00000000-0000-0000-0000-000000000206"],
+      "expected_entity_id": "00000000-0000-0000-0000-000000000206"
+    },
+    {
+      "name": "generic north site without department stays unresolved",
+      "mention": "north site",
+      "entity_type": "LOCATION",
+      "scope": {"tenant_id": "tenant-alpha", "conversation_id": "conv-shared"},
+      "context": "Taylor said they would visit the north site.",
+      "expected_outcome": "UNRESOLVED",
+      "expected_candidate_ids": []
+    }
+  ]
+}

@@ -25,6 +25,96 @@ The LLM is a semantic parser, not a source of business truth. It returns typed c
 cannot select database identifiers or persist state. The application validates every candidate
 deterministically before persistence.
 
+## Contextual entity resolution foundation
+
+Entity resolution is a post-validation boundary invoked after an accepted event has been persisted:
+
+```text
+validated literal mention
+  -> ResolutionScope tenant filter
+  -> deterministic alias candidate retrieval
+  -> ResolutionCandidate[]
+  -> ResolutionPolicy
+  -> RESOLVED | AMBIGUOUS | NEW_ENTITY | UNRESOLVED
+  -> versioned resolution decision
+```
+
+`PERSON` and `LOCATION` share orchestration contracts but never share candidates. Tenant is a hard
+security boundary. Source, conversation, and sender are optional scope dimensions: a scoped alias
+is eligible only when every dimension recorded on that alias matches the incoming mention. A more
+specific exact alias outranks a tenant-wide alias; equally specific winners remain ambiguous.
+
+The first retriever performs Unicode normalization, case folding, whitespace normalization, and
+exact alias lookup. It contains no English word lists or fuzzy merge rules. This is the measurable
+baseline for future embedding retrieval and reranking. Models may rank bounded candidates or make
+typed pairwise semantic assessments, but deterministic policy retains the final decision and models
+never select or write database identifiers.
+
+Resolution evaluation separates retrieval from decision quality. Candidate recall@K and candidate
+set recall measure whether the correct entity reaches the bounded candidate set. Top-1 accuracy,
+outcome accuracy, resolved precision, automatic-resolution coverage, ambiguity accuracy, and
+unresolved accuracy measure policy behavior. Tenant and entity-type leakage are release-blocking
+counts and must remain zero. Semantic retrieval is allowed to improve recall and coverage only if
+resolved precision and isolation do not regress.
+
+The first semantic experiment is exact-first: an exact scoped alias short-circuits model access;
+otherwise the embedder receives the bounded mention/context and only aliases eligible in the same
+tenant, entity type, and scope. It returns ranked candidates, not an identity decision. Embedding-
+only candidates carry `EMBEDDING_SIMILARITY`; the deterministic policy keeps them `UNRESOLVED` until
+a separately evaluated reranker/decision policy establishes safe automatic-link criteria. No
+vectors are persisted and no vector database is used in this phase.
+
+The optional reranking experiment consumes only the bounded candidates returned by embedding
+retrieval. It cannot introduce an entity, cross a scope boundary, or persist a decision. Candidate
+documents include the canonical name and every alias already proven eligible for the incoming
+scope; omitting those aliases was measured to harm contextual person ranking. The common
+`POST /rerank` transport is isolated behind `MentionReranker`, and provider scores remain audit
+signals rather than identity truth. Exact aliases still short-circuit both model calls.
+
+The expanded 24-case fixture adds same-name people with different roles, similarly named locations
+with different purposes, and unsupported hard negatives. Across three live runs, `bge-m3` retained
+top-1 accuracy 1.0 while `bge-reranker-v2-m3` consistently reached 0.941 by confusing `central
+branch` with a logistics hub. The maximum reranker score on an unresolved case was about 0.976,
+which also rules out a simple absolute-score threshold. Both modes retained recall@3 1.0 and zero
+tenant/type leakage. Reranking therefore remains experimental and automatic semantic links remain
+disabled; a deterministic acceptance policy cannot yet be justified by these scores.
+
+For synthetic functional proof, semantic confirmation uses two typed stages. Pairwise verification
+classifies each ID-free mention/profile pair as `SAME_ENTITY`, `DIFFERENT_ENTITY`, or `UNCERTAIN`.
+If more than one pair is confirmed, bounded candidate-set adjudication returns `UNIQUE_MATCH`,
+`NO_MATCH`, or `AMBIGUOUS` using temporary one-based positions. The model never receives UUIDs;
+deterministic policy validates the selected position before mapping it to an internal entity ID.
+
+The verifier has been evaluated only against prepared English synthetic ground truth. On the
+current 24-case dataset, the final blind `deepseek-v4-flash` run with
+`bge-m3` retrieval reached outcome accuracy, resolved precision, ambiguity accuracy, and unresolved
+accuracy of 1.0 with zero tenant/type leakage. Raw pairwise precision was materially lower, so
+pairwise verdicts must never be persisted directly as identity decisions; candidate-set
+adjudication and deterministic aggregation are required parts of the measured behavior.
+
+The application composition enables this evaluated path after persistence. It creates deterministic
+mention IDs from event IDs, stores bounded-context provenance, reuses an active decision on replay,
+short-circuits exact aliases, and invokes semantic retrieval and verification only for non-exact
+mentions. Extraction persistence and resolution use separate transactions; replay repairs a missing
+resolution phase without duplicating the source message or event.
+
+Resolution records are append-oriented and reversible:
+
+- `canonical_entities`: tenant-owned person or location identities;
+- `entity_aliases`: explicit aliases with source/conversation/sender scope and provenance source;
+- `entity_mentions`: literal mentions, scope, source-message provenance, and context hash;
+- `entity_resolution_decisions`: outcome, confidence, candidate ids, factors, resolver version,
+  active state, and an optional superseded decision.
+
+Only one decision may be active for a mention. Repository checks prevent decisions and candidate
+references from crossing tenant or entity-type boundaries; a database partial unique index protects
+the active-decision invariant under concurrent writes.
+
+Source message text and bounded semantic context are not copied into resolution decisions. The
+literal mention is retained for auditability; optional context is represented by a hash at rest.
+Creating a new canonical entity and promoting an automatically observed alias remain controlled
+operations outside the current extraction endpoint.
+
 ## Domain contract
 
 `LocationEventCandidate` describes untrusted model output:
@@ -120,6 +210,8 @@ Normal CI is deterministic and does not call a live model:
 - live model evaluations are opt-in and report provider reliability separately from semantic
   quality. They may execute independent single-message requests with bounded concurrency, while
   preserving dataset order and recording latency/retry statistics.
+- deterministic entity-resolution evaluation runs locally without network access and includes
+  exact aliases, scoped ambiguity, isolation negatives, and semantic-retrieval challenge cases.
 
 Every extraction change should add a positive case and a contrastive negative case. Important
 regression dimensions are subject attribution, false-positive locations, modality/negation,
@@ -134,3 +226,7 @@ movement versus presence, missing context, and evidence provenance.
 5. Preserve raw temporal text if normalization is added.
 6. Prefer explicit abstention over fabricated resolution.
 7. Use typed semantics instead of lexical validation rules.
+8. Resolve entities only after extraction validation and preserve the original literal event.
+9. Prefer reversible mention-to-entity decisions over destructive canonical-entity merges.
+10. Keep embeddings and rerankers behind ports and require dataset evidence before activation.
+11. Treat embedding similarity as candidate retrieval evidence, never as sufficient merge proof.

@@ -117,6 +117,112 @@ LLM -> typed candidate -> deterministic validation -> persistence
 Structured logs record metadata, decisions and latency across the workflow without logging full
 message text or plaintext person-location pairs.
 
+## Contextual entity resolution foundation
+
+The persisted extraction workflow can resolve person and location mentions without allowing a
+model to mutate canonical identity:
+
+```text
+EntityMention + ResolutionScope
+  -> scoped exact-alias retrieval
+  -> ResolutionCandidate[]
+  -> deterministic policy
+  -> RESOLVED | AMBIGUOUS | UNRESOLVED
+  -> reversible versioned decision
+```
+
+Tenant is a hard boundary. Source, conversation, and sender may narrow an alias; scoped aliases do
+not leak into unrelated contexts. PostgreSQL stores canonical entities, aliases, mention provenance,
+and append-oriented decisions. Superseding a decision deactivates the old link instead of deleting
+or rewriting it. The original literal mention on `location_events` remains unchanged.
+
+Exact scoped aliases are resolved deterministically. Otherwise the hybrid retriever ranks eligible
+same-tenant candidates with embeddings and the verifier evaluates ID-free profiles; deterministic
+policy alone maps a validated temporary position to a UUID. Unicode form, case, and whitespace are
+normalized generically; there are no person/location word lists. The separate
+English fixture at `tests/fixtures/resolution_cases.json` covers tenant isolation, ambiguity,
+person/location type separation, and source/conversation/sender scoping. Embedding and reranker
+models remain behind ports and no vectors are persisted. The evaluated reranker is not active.
+
+Run the deterministic resolution baseline without network or model access:
+
+```bash
+python scripts/run_resolution_eval.py
+```
+
+The ignored detailed report is written to `evaluation-results/resolution-baseline.json`. It reports
+candidate recall@1/3, candidate-set recall, top-1 and outcome accuracy, resolved precision,
+automatic-resolution coverage, ambiguity/unresolved accuracy, and tenant/type leakage. The bundled
+24-case dataset includes semantic challenges, same-name people, similarly named locations, and hard
+negatives that exact alias lookup intentionally cannot resolve. Semantic retrieval must improve
+ranking without reducing resolved precision or allowing any tenant/type leakage.
+
+Run the opt-in OpenAI-compatible embedding comparison:
+
+```bash
+$env:LOCATION_ALLOW_INSECURE_HTTP="true"  # trusted internal HTTP only
+$env:LOCATION_OPENAI_TRUST_ENV="false"
+$env:LOCATION_EMBEDDING_MODEL="bge-m3"
+python scripts/run_embedding_resolution_eval.py --top-k 3
+```
+
+The hybrid retriever always prefers deterministic exact aliases. Only when none match does it send
+the bounded mention/context and same-scope candidate documents to the embedder. Embedding-only
+candidates remain `UNRESOLVED`; this phase measures retrieval and does not enable model-driven
+identity links. On the expanded 24-case fixture, `bge-m3` reached candidate recall@1/3 and top-1
+accuracy of 1.0 while preserving resolved precision 1.0 and zero tenant/type leakage.
+
+Compare embedding-only retrieval with the optional reranker:
+
+```powershell
+$env:LOCATION_ALLOW_INSECURE_HTTP="true"  # trusted internal HTTP only
+$env:LOCATION_OPENAI_TRUST_ENV="false"
+python scripts/run_reranker_resolution_eval.py `
+  --embedding-model bge-m3 `
+  --reranker-model bge-reranker-v2-m3 `
+  --runs 3
+```
+
+The ignored report is written to `evaluation-results/reranker-resolution-eval.json`. Reranking is
+limited to candidates already filtered by tenant, entity type, and scope. Exact aliases bypass both
+models. The report includes correct-candidate score margins, unresolved-case top scores, and one
+summary per repeated run. On the expanded fixture embedding top-1 remained 1.0 while reranker top-1
+was consistently 0.941; recall@3 stayed 1.0 and leakage remained zero. An unresolved case received a
+reranker score near 0.976, so neither reranking nor a simple score threshold is approved for
+automatic linking.
+
+Run the synthetic pairwise-verifier functional evaluation:
+
+```powershell
+$env:LOCATION_ALLOW_INSECURE_HTTP="true"
+$env:LOCATION_OPENAI_TRUST_ENV="false"
+$env:LOCATION_OPENAI_API_MODE="chat_completions"
+$env:LOCATION_OPENAI_ENABLE_THINKING="false"
+python scripts/run_resolution_verifier_eval.py `
+  --embedding-model bge-m3 `
+  --verifier-model deepseek-v4-flash `
+  --top-k 3 `
+  --concurrency 2
+```
+
+The verifier receives one mention/context and ID-free candidate profiles. Multiple pairwise
+confirmations trigger comparative adjudication over temporary candidate positions; deterministic
+code alone maps a validated position to an internal UUID. The report is written to
+`evaluation-results/resolution-verifier-eval.json`. The final blind run on 24 prepared synthetic
+cases reached outcome accuracy and resolved precision 1.0 with zero leakage. The same policy is now
+available after event persistence when resolution is enabled.
+
+Run the autonomous synthetic extraction-to-PostgreSQL slice:
+
+```powershell
+python scripts/run_vertical_slice.py
+```
+
+The five-message fixture exercises explicit person/location extraction, scoped semantic identity
+resolution, abstention for an unknown person, durable provenance, and idempotent replay. It seeds
+only canonical identities and aliases; extraction and non-exact linking still use the configured
+providers. A repeated run reuses the stored events and active decisions without new verifier calls.
+
 ## Local setup
 
 Requires Python 3.11+ (3.12 recommended), Docker, and an OpenAI API key for real extraction.
@@ -219,6 +325,23 @@ All variables use the `LOCATION_` prefix:
 | `OPENAI_MODEL` | `gpt-5-mini` | Responses API model |
 | `OPENAI_TIMEOUT_SECONDS` | `20` | Per-request timeout |
 | `OPENAI_MAX_RETRIES` | `2` | Bounded SDK retries |
+| `EMBEDDING_API_KEY` | falls back to `OPENAI_API_KEY` | Optional separate embedding credential |
+| `EMBEDDING_BASE_URL` | falls back to `OPENAI_BASE_URL` | Optional separate embedding endpoint |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI-compatible embedding model |
+| `EMBEDDING_DIMENSIONS` | unset | Optional provider-supported output dimension |
+| `EMBEDDING_TIMEOUT_SECONDS` | `20` | Per-request embedding timeout |
+| `EMBEDDING_MAX_RETRIES` | `2` | Bounded embedding retries |
+| `EMBEDDING_TOP_K` | `3` | Number of semantic candidates retained |
+| `EMBEDDING_CORPUS_LIMIT` | `1000` | Maximum same-scope entities embedded per query |
+| `RERANKER_API_KEY` | falls back to embedding/OpenAI key | Optional reranker credential |
+| `RERANKER_BASE_URL` | falls back to embedding/OpenAI URL | Common `POST /rerank` endpoint base URL |
+| `RERANKER_MODEL` | `bge-reranker-v2-m3` | OpenAI-compatible reranker model |
+| `RERANKER_TIMEOUT_SECONDS` | `20` | Per-request reranker timeout |
+| `RERANKER_MAX_RETRIES` | `2` | Bounded reranker retries for transient failures |
+| `RERANKER_TOP_N` | `3` | Number of embedding candidates retained after reranking |
+| `RESOLUTION_ENABLED` | `true` | Resolve persisted person/location mentions |
+| `RESOLUTION_VERIFIER_MODEL` | `gpt-5-mini` | Pairwise and candidate-set verifier model |
+| `RESOLUTION_VERIFIER_CONCURRENCY` | `2` | Global bound for concurrent verifier calls |
 
 Docker Compose exposes PostgreSQL on host port `55432` by default to avoid common conflicts
 with a locally installed PostgreSQL. Override it with `LOCATION_POSTGRES_PORT` if needed.
@@ -283,5 +406,7 @@ service time.
 
 `AT`, `TO`, `FROM`, `LEFT`, `ARRIVED`, and `NEAR` stay distinct. Negated, probable, possible,
 and planned events may be retained, but this MVP does not build derived current-location state.
-Pronoun resolution, deictic locations, dialogue context, aliases, geocoding, relative-time
-normalization, conflict reconciliation, and streaming are out of scope.
+Pronoun resolution, deictic locations, dialogue context, geocoding, relative-time normalization,
+conflict reconciliation, and streaming remain outside the extraction endpoint. Scoped resolution
+of explicit English person/location mentions is active when configured. Automatic alias promotion
+and the experimental reranker remain disabled.

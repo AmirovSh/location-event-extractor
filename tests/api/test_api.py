@@ -86,8 +86,10 @@ def test_no_event_response() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "message_id": "msg-1001",
+        "source_message_id": None,
         "status": "NO_EVENT",
         "outcomes": [],
+        "resolutions": [],
         "replayed": False,
     }
 

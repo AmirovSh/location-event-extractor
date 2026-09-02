@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from location_extractor.resolution import EventResolutionResult
+
 
 class LocationRelation(StrEnum):
     AT = "AT"
@@ -77,6 +79,7 @@ class RunStatus(StrEnum):
 class ParsedMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    tenant_id: str = Field(default="default", min_length=1, max_length=512)
     conversation_id: str = Field(min_length=1, max_length=512)
     message_id: str = Field(min_length=1, max_length=512)
     author_id: str | None = Field(default=None, max_length=512)
@@ -155,6 +158,8 @@ class CandidateOutcome(BaseModel):
 
 class ProcessResult(BaseModel):
     message_id: str
+    source_message_id: UUID | None = None
     status: RunStatus
     outcomes: list[CandidateOutcome]
+    resolutions: list[EventResolutionResult] = Field(default_factory=list)
     replayed: bool = False

@@ -90,6 +90,16 @@ def test_runtime_environment_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.openai_base_url == "http://llm.internal/v1"
 
 
+def test_embedding_settings_have_bounded_defaults() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.embedding_model
+    assert settings.embedding_top_k == 3
+    assert settings.embedding_corpus_limit == 1000
+    assert settings.reranker_model == "bge-reranker-v2-m3"
+    assert settings.reranker_max_retries == 2
+    assert settings.reranker_top_n == 3
+
+
 async def test_chat_completions_compatibility_mode() -> None:
     parsed = ExtractionResult()
     completions = FakeChatCompletions(parsed)

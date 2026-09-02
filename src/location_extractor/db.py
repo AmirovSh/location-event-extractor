@@ -272,7 +272,10 @@ class SqlAlchemyLocationEventRepository:
             for row in run.rejections
         )
         return ProcessResult(
-            message_id=external_message_id, status=RunStatus(run.status), outcomes=outcomes
+            message_id=external_message_id,
+            source_message_id=run.source_message_id,
+            status=RunStatus(run.status),
+            outcomes=outcomes,
         )
 
 

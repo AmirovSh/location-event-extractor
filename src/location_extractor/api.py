@@ -14,12 +14,26 @@ from location_extractor.application import (
     LocationExtractionService,
 )
 from location_extractor.config import Settings, get_settings
-from location_extractor.config_loader import load_extraction_prompt
+from location_extractor.config_loader import (
+    load_extraction_prompt,
+    load_resolution_adjudication_prompt,
+    load_resolution_verification_prompt,
+)
 from location_extractor.db import SqlAlchemyLocationEventRepository, create_session_factory
 from location_extractor.domain import ParsedMessage, ProcessResult
+from location_extractor.embedding_retrieval import (
+    HybridEmbeddingCandidateRetriever,
+    OpenAICompatibleEmbedder,
+)
 from location_extractor.fakes import FakeExtractor
 from location_extractor.openai_adapter import OpenAIResponsesExtractor
-from location_extractor.ports import LocationEventExtractor
+from location_extractor.ports import LocationEventExtractor, MessageProcessor
+from location_extractor.resolution_repository import SqlAlchemyEntityResolutionRepository
+from location_extractor.resolution_workflow import (
+    PersistedEventResolutionWorkflow,
+    ResolvedLocationExtractionService,
+)
+from location_extractor.semantic_verification import OpenAICompatiblePairwiseVerifier
 from location_extractor.validation import CandidateValidator
 
 
@@ -52,8 +66,9 @@ def configure_logging(level: str) -> None:
     root.setLevel(level.upper())
 
 
-def build_service(settings: Settings) -> LocationExtractionService:
-    repository = SqlAlchemyLocationEventRepository(create_session_factory(settings.database_url))
+def build_service(settings: Settings) -> MessageProcessor:
+    sessions = create_session_factory(settings.database_url)
+    repository = SqlAlchemyLocationEventRepository(sessions)
     extractor: LocationEventExtractor
     if settings.extractor_backend == "fake":
         extractor = FakeExtractor()
@@ -80,7 +95,7 @@ def build_service(settings: Settings) -> LocationExtractionService:
         )
     else:
         raise RuntimeError(f"unsupported extractor backend: {settings.extractor_backend}")
-    return LocationExtractionService(
+    extraction_service = LocationExtractionService(
         AlwaysPassDetector(),
         extractor,
         CandidateValidator(),
@@ -88,14 +103,65 @@ def build_service(settings: Settings) -> LocationExtractionService:
         extractor_version=settings.extractor_version,
         schema_version=settings.schema_version,
     )
+    if not settings.resolution_enabled:
+        return extraction_service
+    embedding_api_key = settings.embedding_api_key or settings.openai_api_key
+    if not embedding_api_key:
+        raise RuntimeError("embedding API key is required when resolution is enabled")
+    verification_version, verification_prompt = load_resolution_verification_prompt()
+    adjudication_version, adjudication_prompt = load_resolution_adjudication_prompt()
+    resolution_repository = SqlAlchemyEntityResolutionRepository(sessions)
+    embedder = OpenAICompatibleEmbedder(
+        api_key=embedding_api_key,
+        base_url=settings.embedding_base_url or settings.openai_base_url,
+        allow_insecure_http=settings.allow_insecure_http,
+        trust_env=settings.openai_trust_env,
+        model=settings.embedding_model,
+        dimensions=settings.embedding_dimensions,
+        timeout_seconds=settings.embedding_timeout_seconds,
+        max_retries=settings.embedding_max_retries,
+    )
+    retriever = HybridEmbeddingCandidateRetriever(
+        resolution_repository,
+        embedder,
+        top_k=settings.embedding_top_k,
+        corpus_limit=settings.embedding_corpus_limit,
+    )
+    verifier = OpenAICompatiblePairwiseVerifier(
+        api_key=settings.openai_api_key or embedding_api_key,
+        base_url=settings.openai_base_url,
+        allow_insecure_http=settings.allow_insecure_http,
+        trust_env=settings.openai_trust_env,
+        api_mode=settings.openai_api_mode,
+        max_output_tokens=settings.openai_max_output_tokens,
+        enable_thinking=settings.openai_enable_thinking,
+        temperature=settings.openai_temperature,
+        model=settings.resolution_verifier_model,
+        timeout_seconds=settings.openai_timeout_seconds,
+        max_retries=settings.openai_max_retries,
+        prompt_version=verification_version,
+        system_prompt=verification_prompt,
+        adjudication_prompt_version=adjudication_version,
+        adjudication_system_prompt=adjudication_prompt,
+    )
+    return ResolvedLocationExtractionService(
+        extraction_service,
+        PersistedEventResolutionWorkflow(
+            resolution_repository,
+            retriever,
+            verifier,
+            verifier,
+            verifier_concurrency=settings.resolution_verifier_concurrency,
+        ),
+    )
 
 
 def create_app(
-    service_factory: Callable[[], LocationExtractionService] | None = None,
+    service_factory: Callable[[], MessageProcessor] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Location Event Extractor", version="0.1.0")
 
-    def service_dependency() -> LocationExtractionService:
+    def service_dependency() -> MessageProcessor:
         if service_factory is not None:
             return service_factory()
         return build_service(get_settings())
@@ -115,7 +181,7 @@ def create_app(
 
     @app.post("/v1/location-events/extract", response_model=ProcessResult)
     async def extract(
-        message: ParsedMessage, service: LocationExtractionService = Depends(service_dependency)
+        message: ParsedMessage, service: MessageProcessor = Depends(service_dependency)
     ) -> ProcessResult:
         try:
             return await service.process(message)

@@ -50,3 +50,61 @@ Set temporal_raw only to an explicit temporal expression copied from the message
 tense labels, helper verbs, empty strings, or placeholder text such as "none"; use null when no
 temporal expression is present.
 """
+
+[entity_resolution_verification]
+version = "resolution-verifier-v3"
+system = """
+You evaluate whether one explicit English mention matches one candidate profile in a closed-world
+synthetic entity-resolution dataset. Return only data matching the supplied schema.
+
+Use SAME_ENTITY when the mention/context and profile contain a specific matching surname,
+abbreviation, occupational role, organizational function, place purpose, or clear semantic
+paraphrase. In this synthetic evaluation, a direct role or purpose paraphrase is sufficient positive
+evidence. Use DIFFERENT_ENTITY when the candidate has a conflicting name, role, function, or place
+purpose. Use UNCERTAIN when the pair is merely compatible but has neither a specific match nor a
+specific conflict. Lexical or embedding similarity alone is not identity evidence. A shared first
+name or generic words such as office, hub, branch, site, and north are not sufficient by themselves.
+
+Compare the full set of identity-bearing qualifiers. SAME_ENTITY requires at least one distinctive
+qualifier to align and no purpose or role to conflict. If only a generic type or direction aligns,
+do not use SAME_ENTITY. A candidate whose distinctive purpose is absent or conflicts with the
+mention's explicit purpose is DIFFERENT_ENTITY. For example, "central" does not make a freight hub
+the same as a central office, and "north" does not make a warehouse the same as a sales office or a
+research campus.
+
+Examples:
+- mention "Sam from warehouse operations" and profile known as "warehouse coordinator" -> SAME_ENTITY
+- mention "Sam from product design" and profile known as "warehouse coordinator" -> DIFFERENT_ENTITY
+- mention "Sam" and profile "Sam Taylor" without other context -> UNCERTAIN
+- mention "community venue for neighborhood events" and profile "civic center" -> SAME_ENTITY
+- mention "freight shipment hub" and profile "community center" -> DIFFERENT_ENTITY
+- mention "warehouse up north" and profile "northern storage depot" -> SAME_ENTITY
+- mention "warehouse up north" and profile "regional sales branch" -> DIFFERENT_ENTITY
+
+Set insufficient_context=true whenever the evidence cannot establish identity. Supporting and
+contradicting signals must be short phrases copied or directly normalized from the supplied mention,
+context, canonical name, or known mentions. Do not invent facts, request external knowledge, choose
+database identifiers, or expose chain-of-thought.
+"""
+
+[entity_resolution_adjudication]
+version = "resolution-adjudicator-v1"
+system = """
+You adjudicate a closed-world synthetic entity-resolution case after pairwise verification produced
+multiple possible matches. Return only data matching the supplied schema.
+
+Compare the mention and its context against all numbered candidate profiles. Return UNIQUE_MATCH
+only when exactly one profile aligns with every specific name, role, function, or place-purpose
+qualifier. Return NO_MATCH when the context lacks a distinctive qualifier or none of the profiles
+fits it. Return AMBIGUOUS when two or more profiles remain equally supported.
+
+Generic overlap such as a shared first name, office, hub, branch, warehouse, site, central, or north
+is never enough. Do not ignore an explicit purpose: freight logistics differs from community events;
+laboratory research differs from sales; warehouse operations differs from product design. For a
+generic mention such as "north site" without a department or purpose, return NO_MATCH even if all
+candidates contain "north".
+
+Candidate positions are temporary labels, not database identifiers. Do not invent facts, use
+external knowledge, or expose chain-of-thought. Signals must be short phrases from the supplied
+input.
+"""

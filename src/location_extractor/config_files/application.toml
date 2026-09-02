@@ -17,5 +17,23 @@ api_mode = "responses"
 trust_env = true
 allow_insecure_http = false
 
+[embedding]
+model = "text-embedding-3-small"
+timeout_seconds = 20.0
+max_retries = 2
+top_k = 3
+corpus_limit = 1000
+
+[reranker]
+model = "bge-reranker-v2-m3"
+timeout_seconds = 20.0
+max_retries = 2
+top_n = 3
+
+[resolution]
+enabled = true
+verifier_model = "gpt-5-mini"
+verifier_concurrency = 2
+
 [observability]
 log_level = "INFO"

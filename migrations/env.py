@@ -7,6 +7,9 @@ from sqlalchemy import engine_from_config, pool
 
 from location_extractor.config import get_settings
 from location_extractor.db import Base
+from location_extractor.resolution_repository import register_resolution_models
+
+register_resolution_models()
 
 config = context.config
 if config.config_file_name is not None:

@@ -16,6 +16,20 @@ Implemented:
   `deepseek-v4-flash` baseline;
 - bounded live-evaluation concurrency with stable ordering and latency/retry statistics.
 - a categorized 64-case English regression dataset with per-category quality metrics.
+- typed contextual entity-resolution contracts for people and locations;
+- scoped canonical entities, aliases, mentions, and reversible decisions in PostgreSQL;
+- deterministic exact-alias candidate retrieval with tenant isolation and an English resolution
+  fixture baseline.
+- a reproducible 24-case deterministic resolution evaluator with retrieval, ranking, decision,
+  coverage, ambiguity, and isolation metrics.
+- an OpenAI-compatible `MentionEmbedder`, exact-first hybrid retrieval, fake-based CI coverage, and
+  an opt-in `bge-m3` retrieval baseline without vector persistence.
+- a provider-independent reranker, bounded `POST /rerank` adapter, score-margin diagnostics, and
+  repeatable live comparison against `bge-reranker-v2-m3`.
+- typed pairwise semantic verification, bounded candidate-set adjudication, deterministic ID
+  mapping, and a blind synthetic functional evaluation command.
+- an autonomous extraction-to-PostgreSQL vertical slice with scoped person/location resolution,
+  durable decisions, and idempotent replay.
 
 Not active in the current workflow:
 
@@ -28,6 +42,30 @@ abstention accuracy was 0.957. Multiple events, travel context, and hypothetical
 non-physical ownership false positive; provider reliability and model variability remain separate
 from semantic scoring. This synthetic dataset is a regression baseline, not a production-readiness
 claim.
+
+Deterministic entity-resolution baseline (2026-09-02, `scoped-exact-alias-v1`, 16 cases):
+candidate recall@1/3 and top-1 accuracy were 0.636, candidate-set recall was 0.714, outcome accuracy
+was 0.750, and automatic-resolution coverage was 0.438. Resolved precision, ambiguity accuracy,
+and unresolved accuracy were 1.0; tenant and entity-type leakage counts were zero. Four semantic
+challenge cases remain unresolved by design and define the target for embedding retrieval.
+
+Embedding retrieval baseline (2026-09-02, `bge-m3`, exact-first, top-K 3): candidate recall@1/3,
+candidate-set recall, and top-1 accuracy reached 1.0 on the same 16 cases. Resolved precision,
+ambiguity accuracy, and unresolved accuracy remained 1.0 with zero tenant/type leakage. Outcome
+accuracy stayed 0.750 and automatic coverage stayed 0.438 by design: embedding-only candidates are
+retrieved but cannot yet create an automatic resolution decision.
+
+Reranker challenge evaluation (2026-09-02, 24 cases, three repeated runs): `bge-m3` kept top-1
+accuracy 1.0 while `bge-reranker-v2-m3` consistently scored 0.941; both kept recall@3 1.0 and zero
+tenant/type leakage. Reranker maximum score on an unresolved case was approximately 0.976, so an
+absolute score threshold does not separate supported from unsupported mentions. The reranker is not
+eligible for automatic linking on current evidence.
+
+Synthetic verifier proof (2026-09-02, 24 cases): `deepseek-v4-flash` pairwise verification plus
+candidate-set adjudication and deterministic aggregation reached outcome accuracy 1.0, resolved
+precision 1.0, ambiguity/unresolved accuracy 1.0, and zero tenant/type leakage in the final blind
+run. This demonstrates feasibility on prepared synthetic messages, not production readiness or
+cross-run stability.
 
 A bounded-concurrency run with two request slots completed all 24 cases in 297 seconds with no
 provider failures, four retried cases, event-detection F1 of 0.968, and whole-event F1 of 0.941.
@@ -43,17 +81,24 @@ higher limits remain available as an explicit CLI override for other provider de
 
 1. Add anonymized production-like edge cases to the categorized English regression dataset as
    they are discovered.
-2. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
+2. Expand the autonomous vertical-slice fixture with ambiguity, multiple events, provider failure,
+   and partial-resolution cases before deriving a current-location read model.
+3. Add more independently sourced or anonymized production-like resolution cases before making any
+   non-synthetic release claim.
+4. Define an evidence-based deterministic automatic-link policy only if a broader evaluation
+   demonstrates safe precision and ambiguity separation.
+5. Define production release criteria for the integrated resolution behavior; current evidence is
+   synthetic and proves architecture/functionality rather than production readiness.
+6. Consider a Stanza or lightweight detector only if measured recall is safe and LLM cost/latency
    makes filtering worthwhile.
 
 ## Post-MVP
 
-1. Canonical location registry, aliases, hierarchy, and auditable resolution.
-2. Canonical person registry, aliases, and explicit ambiguity.
-3. Bounded person coreference over dialogue context.
-4. Location/deictic coreference over dialogue context.
-5. Relative-time normalization while preserving the raw expression.
-6. Conflict and correction handling plus a derived current-location read model.
-7. Human review, versioned reprocessing, quality monitoring, and drift detection.
-8. Add other languages through explicit language-specific datasets, prompts, evaluation
+1. Canonical location hierarchy and controlled alias promotion.
+2. Bounded person coreference over dialogue context.
+3. Location/deictic coreference over dialogue context.
+4. Relative-time normalization while preserving the raw expression.
+5. Conflict and correction handling plus a derived current-location read model.
+6. Human review, versioned reprocessing, quality monitoring, and drift detection.
+7. Add other languages through explicit language-specific datasets, prompts, evaluation
    baselines, and release criteria; do not assume English quality transfers automatically.

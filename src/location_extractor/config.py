@@ -43,6 +43,31 @@ class Settings(BaseSettings):
         default=_CONFIG["openai"]["timeout_seconds"], gt=0, le=120
     )
     openai_max_retries: int = Field(default=_CONFIG["openai"]["max_retries"], ge=0, le=5)
+    embedding_api_key: str | None = Field(default=None, repr=False)
+    embedding_base_url: str | None = None
+    embedding_model: str = _CONFIG["embedding"]["model"]
+    embedding_dimensions: int | None = Field(default=None, ge=1, le=16_384)
+    embedding_timeout_seconds: float = Field(
+        default=_CONFIG["embedding"]["timeout_seconds"], gt=0, le=120
+    )
+    embedding_max_retries: int = Field(default=_CONFIG["embedding"]["max_retries"], ge=0, le=5)
+    embedding_top_k: int = Field(default=_CONFIG["embedding"]["top_k"], ge=1, le=100)
+    embedding_corpus_limit: int = Field(
+        default=_CONFIG["embedding"]["corpus_limit"], ge=1, le=100_000
+    )
+    reranker_api_key: str | None = Field(default=None, repr=False)
+    reranker_base_url: str | None = None
+    reranker_model: str = _CONFIG["reranker"]["model"]
+    reranker_timeout_seconds: float = Field(
+        default=_CONFIG["reranker"]["timeout_seconds"], gt=0, le=120
+    )
+    reranker_max_retries: int = Field(default=_CONFIG["reranker"]["max_retries"], ge=0, le=5)
+    reranker_top_n: int = Field(default=_CONFIG["reranker"]["top_n"], ge=1, le=100)
+    resolution_enabled: bool = _CONFIG["resolution"]["enabled"]
+    resolution_verifier_model: str = _CONFIG["resolution"]["verifier_model"]
+    resolution_verifier_concurrency: int = Field(
+        default=_CONFIG["resolution"]["verifier_concurrency"], ge=1, le=16
+    )
     log_level: str = _CONFIG["observability"]["log_level"]
 
 

@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13,<2",
   "fastapi>=0.115,<1",
+  "httpx>=0.27,<1",
   "openai>=2,<3",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.6,<3",
@@ -19,7 +20,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.27,<1",
   "mypy>=1.13,<2",
   "pytest>=8.3,<9",
   "pytest-asyncio>=0.24,<1",

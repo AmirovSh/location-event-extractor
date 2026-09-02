@@ -26,3 +26,27 @@ def load_extraction_prompt(path: Path = PROMPT_CONFIG_PATH) -> tuple[str, str]:
     if not version or not system:
         raise ValueError("location_event_extraction prompt and version must not be empty")
     return version, system
+
+
+@lru_cache
+def load_resolution_verification_prompt(path: Path = PROMPT_CONFIG_PATH) -> tuple[str, str]:
+    with path.open("rb") as stream:
+        document = tomllib.load(stream)
+    prompt = document["entity_resolution_verification"]
+    version = str(prompt["version"]).strip()
+    system = str(prompt["system"]).strip()
+    if not version or not system:
+        raise ValueError("entity_resolution_verification prompt and version must not be empty")
+    return version, system
+
+
+@lru_cache
+def load_resolution_adjudication_prompt(path: Path = PROMPT_CONFIG_PATH) -> tuple[str, str]:
+    with path.open("rb") as stream:
+        document = tomllib.load(stream)
+    prompt = document["entity_resolution_adjudication"]
+    version = str(prompt["version"]).strip()
+    system = str(prompt["system"]).strip()
+    if not version or not system:
+        raise ValueError("entity_resolution_adjudication prompt and version must not be empty")
+    return version, system
