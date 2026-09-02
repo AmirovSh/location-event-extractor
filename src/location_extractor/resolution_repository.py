@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relations
 
 from location_extractor.db import Base
 from location_extractor.resolution import (
+    AliasSource,
     CanonicalEntity,
     EmbeddingCandidateDocument,
     EntityAlias,
@@ -71,6 +72,12 @@ class EntityAliasRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(512))
     sender_id: Mapped[str | None] = mapped_column(String(512))
     alias_source: Mapped[str] = mapped_column(String(32))
+    source_mention_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("entity_mentions.id", ondelete="SET NULL")
+    )
+    source_resolution_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("entity_resolution_decisions.id", ondelete="SET NULL")
+    )
     active: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     entity: Mapped[CanonicalEntityRow] = relationship(back_populates="aliases")
@@ -184,6 +191,50 @@ class SqlAlchemyEntityResolutionRepository:
                 )
             )
         return mention
+
+    def promote_alias(self, alias: EntityAlias) -> bool:
+        if alias.source_mention_id is None or alias.source_resolution_id is None:
+            raise ValueError("promoted alias requires mention and resolution provenance")
+        with self.sessions.begin() as session:
+            entity = session.get(CanonicalEntityRow, alias.canonical_entity_id)
+            mention = session.get(EntityMentionRow, alias.source_mention_id)
+            decision = session.get(EntityResolutionDecisionRow, alias.source_resolution_id)
+            if entity is None or mention is None or decision is None:
+                raise ValueError("promoted alias provenance does not exist")
+            if (
+                alias.source is not AliasSource.AUTO_RESOLUTION
+                or decision.mention_id != mention.id
+                or decision.canonical_entity_id != entity.id
+                or not decision.active
+                or decision.outcome != "RESOLVED"
+                or decision.confidence != "HIGH"
+                or ResolutionFactor.PAIRWISE_VERIFICATION.value not in decision.factors
+                or entity.tenant_id != alias.scope.tenant_id
+                or mention.tenant_id != alias.scope.tenant_id
+                or entity.entity_type != mention.entity_type
+                or mention.normalized_mention != alias.normalized_alias
+                or mention.source_id != alias.scope.source_id
+                or mention.conversation_id != alias.scope.conversation_id
+                or mention.sender_id != alias.scope.sender_id
+            ):
+                raise ValueError("promoted alias provenance is not an eligible resolution")
+            existing = list(
+                session.scalars(
+                    select(EntityAliasRow).where(
+                        EntityAliasRow.tenant_id == alias.scope.tenant_id,
+                        EntityAliasRow.entity_type == entity.entity_type,
+                        EntityAliasRow.normalized_alias == alias.normalized_alias,
+                        EntityAliasRow.active.is_(True),
+                        _exact_scope(EntityAliasRow.source_id, alias.scope.source_id),
+                        _exact_scope(EntityAliasRow.conversation_id, alias.scope.conversation_id),
+                        _exact_scope(EntityAliasRow.sender_id, alias.scope.sender_id),
+                    )
+                )
+            )
+            if existing:
+                return False
+            session.add(_alias_row(alias, EntityType(entity.entity_type)))
+        return True
 
     def get_active_decision(self, mention_id: UUID) -> ResolutionDecision | None:
         with self.sessions() as session:
@@ -318,6 +369,10 @@ def _scope_match(column: Any, value: str | None) -> Any:
     return or_(column.is_(None), column == value)
 
 
+def _exact_scope(column: Any, value: str | None) -> Any:
+    return column.is_(None) if value is None else column == value
+
+
 def register_resolution_models() -> None:
     """Import target used by Alembic to register these rows on Base.metadata."""
 
@@ -334,6 +389,8 @@ def _alias_row(alias: EntityAlias, entity_type: EntityType) -> EntityAliasRow:
         conversation_id=alias.scope.conversation_id,
         sender_id=alias.scope.sender_id,
         alias_source=alias.source.value,
+        source_mention_id=alias.source_mention_id,
+        source_resolution_id=alias.source_resolution_id,
         active=alias.active,
         created_at=alias.created_at,
     )

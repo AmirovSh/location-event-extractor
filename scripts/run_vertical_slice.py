@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
 
 async def run(arguments: argparse.Namespace) -> dict[str, Any]:
     from location_extractor.api import build_service
+    from location_extractor.application import ExtractionProviderError
     from location_extractor.config import Settings
     from location_extractor.db import create_session_factory
     from location_extractor.domain import ParsedMessage
@@ -47,38 +48,93 @@ async def run(arguments: argparse.Namespace) -> dict[str, Any]:
         if line.strip()
     ]
     details: list[dict[str, Any]] = []
-    correct_person = correct_location = 0
+    correct_person = correct_location = correct_outcomes = expected_event_count = 0
     for row in rows:
         message = ParsedMessage.model_validate(row["message"])
-        result = await service.process(message)
-        person_id = location_id = None
-        if result.resolutions:
-            person_id = result.resolutions[0].person.canonical_entity_id
-            location_id = result.resolutions[0].location.canonical_entity_id
-        expected_person = _optional_uuid(row.get("expected_person_entity_id"))
-        expected_location = _optional_uuid(row.get("expected_location_entity_id"))
-        correct_person += int(person_id == expected_person)
-        correct_location += int(location_id == expected_location)
+        expected_events = row.get("expected_events") or [
+            {
+                "person_entity_id": row.get("expected_person_entity_id"),
+                "location_entity_id": row.get("expected_location_entity_id"),
+            }
+        ]
+        event_details: list[dict[str, Any]] = []
+        expected_event_count += len(expected_events)
+        try:
+            result = await service.process(message)
+        except ExtractionProviderError:
+            details.append(
+                {
+                    "message_id": message.message_id,
+                    "status": "PROVIDER_FAILURE",
+                    "replayed": False,
+                    "event_count": 0,
+                    "expected_event_count": len(expected_events),
+                    "events": [],
+                }
+            )
+            continue
+        for index, expected in enumerate(expected_events):
+            resolution = result.resolutions[index] if index < len(result.resolutions) else None
+            person_id = resolution.person.canonical_entity_id if resolution else None
+            location_id = resolution.location.canonical_entity_id if resolution else None
+            person_outcome = resolution.person.outcome.value if resolution else None
+            location_outcome = resolution.location.outcome.value if resolution else None
+            expected_person = _optional_uuid(expected.get("person_entity_id"))
+            expected_location = _optional_uuid(expected.get("location_entity_id"))
+            expected_person_outcome = expected.get("person_outcome")
+            expected_location_outcome = expected.get("location_outcome")
+            correct_person += int(person_id == expected_person)
+            correct_location += int(location_id == expected_location)
+            correct_outcomes += int(
+                (expected_person_outcome is None or person_outcome == expected_person_outcome)
+                and (
+                    expected_location_outcome is None
+                    or location_outcome == expected_location_outcome
+                )
+            )
+            event_details.append(
+                {
+                    "person_entity_id": str(person_id) if person_id else None,
+                    "location_entity_id": str(location_id) if location_id else None,
+                    "person_outcome": person_outcome,
+                    "location_outcome": location_outcome,
+                    "expected_person_entity_id": (
+                        str(expected_person) if expected_person else None
+                    ),
+                    "expected_location_entity_id": (
+                        str(expected_location) if expected_location else None
+                    ),
+                    "expected_person_outcome": expected_person_outcome,
+                    "expected_location_outcome": expected_location_outcome,
+                }
+            )
         details.append(
             {
                 "message_id": message.message_id,
                 "status": result.status.value,
                 "replayed": result.replayed,
                 "event_count": sum(outcome.persisted for outcome in result.outcomes),
-                "person_entity_id": str(person_id) if person_id else None,
-                "location_entity_id": str(location_id) if location_id else None,
-                "expected_person_entity_id": str(expected_person) if expected_person else None,
-                "expected_location_entity_id": (
-                    str(expected_location) if expected_location else None
-                ),
+                "expected_event_count": len(expected_events),
+                "events": event_details,
             }
         )
     count = len(rows)
     return {
         "summary": {
             "message_count": count,
-            "person_resolution_accuracy": correct_person / count if count else 0.0,
-            "location_resolution_accuracy": correct_location / count if count else 0.0,
+            "expected_event_count": expected_event_count,
+            "person_resolution_accuracy": (
+                correct_person / expected_event_count if expected_event_count else 0.0
+            ),
+            "location_resolution_accuracy": (
+                correct_location / expected_event_count if expected_event_count else 0.0
+            ),
+            "outcome_accuracy": (
+                correct_outcomes / expected_event_count if expected_event_count else 0.0
+            ),
+            "provider_failure_count": sum(
+                detail["status"] == "PROVIDER_FAILURE" for detail in details
+            ),
         },
         "messages": details,
     }

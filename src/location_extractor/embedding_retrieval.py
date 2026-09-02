@@ -13,10 +13,11 @@ from location_extractor.resolution import (
     EntityMention,
     ResolutionCandidate,
     ResolutionFactor,
+    ResolutionProviderError,
 )
 
 
-class EmbeddingProviderError(RuntimeError):
+class EmbeddingProviderError(ResolutionProviderError):
     pass
 
 

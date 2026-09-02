@@ -13,6 +13,7 @@ from location_extractor.domain import (
 from location_extractor.resolution import (
     CandidateSetVerification,
     CanonicalEntity,
+    EntityAlias,
     EntityMention,
     EntityType,
     PairwiseVerification,
@@ -21,6 +22,7 @@ from location_extractor.resolution import (
     ResolutionDecision,
     ResolutionFactor,
     ResolutionOutcome,
+    ResolutionProviderError,
     VerificationVerdict,
 )
 from location_extractor.resolution_workflow import (
@@ -33,6 +35,7 @@ class FakeResolutionRepository:
     def __init__(self) -> None:
         self.mentions: dict[UUID, EntityMention] = {}
         self.decisions: dict[UUID, ResolutionDecision] = {}
+        self.aliases: list[EntityAlias] = []
 
     def save_mention(self, mention: EntityMention) -> EntityMention:
         self.mentions.setdefault(mention.id, mention)
@@ -44,6 +47,15 @@ class FakeResolutionRepository:
     def save_decision(self, decision: ResolutionDecision) -> ResolutionDecision:
         self.decisions[decision.mention_id] = decision
         return decision
+
+    def promote_alias(self, alias: EntityAlias) -> bool:
+        if any(
+            existing.normalized_alias == alias.normalized_alias and existing.scope == alias.scope
+            for existing in self.aliases
+        ):
+            return False
+        self.aliases.append(alias)
+        return True
 
 
 class FakeRetriever:
@@ -110,6 +122,11 @@ class FakeExtractionService:
         )
 
 
+class FailingRetriever:
+    async def retrieve(self, mention: EntityMention) -> list[ResolutionCandidate]:
+        raise ResolutionProviderError("synthetic provider failure")
+
+
 async def test_persisted_event_is_resolved_and_replay_reuses_decisions() -> None:
     repository = FakeResolutionRepository()
     verifier = ConfirmingVerifier()
@@ -142,4 +159,44 @@ async def test_persisted_event_is_resolved_and_replay_reuses_decisions() -> None
     assert second.resolutions == first.resolutions
     assert len(repository.mentions) == 2
     assert len(repository.decisions) == 2
+    assert len(repository.aliases) == 2
+    assert all(alias.source_mention_id is not None for alias in repository.aliases)
+    assert all(alias.source_resolution_id is not None for alias in repository.aliases)
     assert verifier.calls == 2
+
+
+async def test_provider_failure_is_persisted_as_unresolved_for_each_mention() -> None:
+    repository = FakeResolutionRepository()
+    verifier = ConfirmingVerifier()
+    workflow = PersistedEventResolutionWorkflow(
+        repository,
+        FailingRetriever(),
+        verifier,
+        verifier,
+    )
+
+    result = await workflow.resolve_result(
+        ParsedMessage(
+            tenant_id="tenant-alpha",
+            conversation_id="conv-ops",
+            message_id="msg-provider-failure",
+            author_id="sender-1",
+            sent_at=datetime.now(UTC),
+            text="John is at the central branch.",
+        ),
+        await FakeExtractionService().process(
+            ParsedMessage(
+                tenant_id="tenant-alpha",
+                conversation_id="conv-ops",
+                message_id="msg-provider-failure",
+                author_id="sender-1",
+                sent_at=datetime.now(UTC),
+                text="John is at the central branch.",
+            )
+        ),
+    )
+
+    assert len(result.resolutions) == 1
+    assert result.resolutions[0].person.outcome is ResolutionOutcome.UNRESOLVED
+    assert result.resolutions[0].location.outcome is ResolutionOutcome.UNRESOLVED
+    assert len(repository.aliases) == 0

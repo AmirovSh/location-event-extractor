@@ -12,6 +12,7 @@ from location_extractor.ports import (
     ResolutionDecisionRepository,
 )
 from location_extractor.resolution import (
+    ControlledAliasPromotionPolicy,
     EntityMention,
     EntityType,
     EventResolutionResult,
@@ -20,6 +21,8 @@ from location_extractor.resolution import (
     ResolutionConfidence,
     ResolutionDecision,
     ResolutionFactor,
+    ResolutionOutcome,
+    ResolutionProviderError,
     ResolutionScope,
     VerificationVerdict,
     VerifiedResolutionPolicy,
@@ -49,6 +52,7 @@ class PersistedEventResolutionWorkflow:
         self.candidate_set_verifier = candidate_set_verifier
         self.verifier_semaphore = asyncio.Semaphore(verifier_concurrency)
         self.policy = VerifiedResolutionPolicy()
+        self.alias_policy = ControlledAliasPromotionPolicy()
 
     async def resolve_result(self, message: ParsedMessage, result: ProcessResult) -> ProcessResult:
         if result.source_message_id is None:
@@ -89,37 +93,57 @@ class PersistedEventResolutionWorkflow:
         self.repository.save_mention(mention)
         existing = self.repository.get_active_decision(mention.id)
         if existing is not None:
+            self._promote_eligible_alias(mention, existing)
             return _to_result(mention, existing)
-        candidates = await self.retriever.retrieve(mention)
-        if candidates and ResolutionFactor.EXACT_ALIAS in candidates[0].factors:
-            decision = self.policy.decide(mention, candidates, [])
-        else:
+        candidates = []
+        try:
+            candidates = await self.retriever.retrieve(mention)
+            if candidates and ResolutionFactor.EXACT_ALIAS in candidates[0].factors:
+                decision = self.policy.decide(mention, candidates, [])
+            else:
 
-            async def verify(index: int) -> PairwiseVerification:
-                async with self.verifier_semaphore:
-                    return await self.pairwise_verifier.verify(mention, candidates[index])
+                async def verify(index: int) -> PairwiseVerification:
+                    async with self.verifier_semaphore:
+                        return await self.pairwise_verifier.verify(mention, candidates[index])
 
-            verifications = list(
-                await asyncio.gather(*(verify(index) for index in range(len(candidates))))
-            )
-            confirmed = sum(
-                verification.verdict is VerificationVerdict.SAME_ENTITY
-                and not verification.insufficient_context
-                and verification.confidence
-                in (ResolutionConfidence.HIGH, ResolutionConfidence.MEDIUM)
-                for verification in verifications
-            )
-            candidate_set_verification = None
-            if confirmed > 1:
-                async with self.verifier_semaphore:
-                    candidate_set_verification = (
-                        await self.candidate_set_verifier.verify_candidate_set(mention, candidates)
-                    )
-            decision = self.policy.decide(
-                mention, candidates, verifications, candidate_set_verification
+                verifications = list(
+                    await asyncio.gather(*(verify(index) for index in range(len(candidates))))
+                )
+                confirmed = sum(
+                    verification.verdict is VerificationVerdict.SAME_ENTITY
+                    and not verification.insufficient_context
+                    and verification.confidence
+                    in (ResolutionConfidence.HIGH, ResolutionConfidence.MEDIUM)
+                    for verification in verifications
+                )
+                candidate_set_verification = None
+                if confirmed > 1:
+                    async with self.verifier_semaphore:
+                        candidate_set_verification = (
+                            await self.candidate_set_verifier.verify_candidate_set(
+                                mention, candidates
+                            )
+                        )
+                decision = self.policy.decide(
+                    mention, candidates, verifications, candidate_set_verification
+                )
+        except ResolutionProviderError:
+            decision = ResolutionDecision(
+                mention_id=mention.id,
+                outcome=ResolutionOutcome.UNRESOLVED,
+                confidence=ResolutionConfidence.UNKNOWN,
+                candidate_entity_ids=[candidate.entity.id for candidate in candidates],
+                factors=[ResolutionFactor.PROVIDER_FAILURE],
+                resolver_version="provider-unavailable-v1",
             )
         self.repository.save_decision(decision)
+        self._promote_eligible_alias(mention, decision)
         return _to_result(mention, decision)
+
+    def _promote_eligible_alias(self, mention: EntityMention, decision: ResolutionDecision) -> None:
+        alias = self.alias_policy.propose(mention, decision)
+        if alias is not None:
+            self.repository.promote_alias(alias)
 
 
 class ResolvedLocationExtractionService:

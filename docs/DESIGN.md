@@ -112,8 +112,14 @@ the active-decision invariant under concurrent writes.
 
 Source message text and bounded semantic context are not copied into resolution decisions. The
 literal mention is retained for auditability; optional context is represented by a hash at rest.
-Creating a new canonical entity and promoting an automatically observed alias remain controlled
-operations outside the current extraction endpoint.
+
+Controlled alias promotion runs only after a newly created or replayed active decision passes a
+stricter policy than resolution itself: the outcome must be `RESOLVED`, confidence must be `HIGH`,
+and factors must include pairwise semantic verification. The promoted literal keeps the complete
+tenant/source/conversation/sender scope and foreign-key provenance to both mention and decision.
+The repository independently verifies all of these invariants and refuses conflicting or duplicate
+aliases. Exact matches, medium confidence, ambiguity, unresolved mentions, and provider failures
+cannot train the alias catalog. Creating a new canonical entity remains outside the endpoint.
 
 ## Domain contract
 

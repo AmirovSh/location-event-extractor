@@ -30,6 +30,8 @@ Implemented:
   mapping, and a blind synthetic functional evaluation command.
 - an autonomous extraction-to-PostgreSQL vertical slice with scoped person/location resolution,
   durable decisions, and idempotent replay.
+- controlled, scoped alias promotion from high-confidence verified decisions with durable mention
+  and decision provenance.
 
 Not active in the current workflow:
 
@@ -67,6 +69,13 @@ precision 1.0, ambiguity/unresolved accuracy 1.0, and zero tenant/type leakage i
 run. This demonstrates feasibility on prepared synthetic messages, not production readiness or
 cross-run stability.
 
+Expanded vertical-slice run (2026-09-02, 10 messages, 11 expected events): all ten events that
+reached the pipeline matched expected person IDs, location IDs, and resolution outcomes, including
+ambiguity, partial resolution, multiple events, and tenant isolation. One extraction request failed
+at the provider boundary, producing reported all-event accuracy of 0.909 and one provider failure;
+the batch continued. PostgreSQL contained 12 automatically promoted aliases, all with mention and
+decision provenance.
+
 A bounded-concurrency run with two request slots completed all 24 cases in 297 seconds with no
 provider failures, four retried cases, event-detection F1 of 0.968, and whole-event F1 of 0.941.
 One ticket-purchase negative case became a false positive on its retry, confirming that repeated
@@ -81,8 +90,8 @@ higher limits remain available as an explicit CLI override for other provider de
 
 1. Add anonymized production-like edge cases to the categorized English regression dataset as
    they are discovered.
-2. Expand the autonomous vertical-slice fixture with ambiguity, multiple events, provider failure,
-   and partial-resolution cases before deriving a current-location read model.
+2. Continue expanding the autonomous vertical-slice fixture beyond its current ambiguity, multiple
+   events, provider failure, partial-resolution, and tenant-isolation cases.
 3. Add more independently sourced or anonymized production-like resolution cases before making any
    non-synthetic release claim.
 4. Define an evidence-based deterministic automatic-link policy only if a broader evaluation
@@ -94,7 +103,7 @@ higher limits remain available as an explicit CLI override for other provider de
 
 ## Post-MVP
 
-1. Canonical location hierarchy and controlled alias promotion.
+1. Canonical location hierarchy and reviewed widening of promoted alias scopes.
 2. Bounded person coreference over dialogue context.
 3. Location/deictic coreference over dialogue context.
 4. Relative-time normalization while preserving the raw expression.

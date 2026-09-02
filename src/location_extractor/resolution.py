@@ -34,6 +34,10 @@ class AliasSource(StrEnum):
     AUTO_RESOLUTION = "AUTO_RESOLUTION"
 
 
+class ResolutionProviderError(RuntimeError):
+    """A recoverable failure of semantic retrieval or verification."""
+
+
 class ResolutionFactor(StrEnum):
     EXACT_ALIAS = "EXACT_ALIAS"
     SAME_TENANT = "SAME_TENANT"
@@ -43,6 +47,7 @@ class ResolutionFactor(StrEnum):
     EMBEDDING_SIMILARITY = "EMBEDDING_SIMILARITY"
     RERANKER_SCORE = "RERANKER_SCORE"
     PAIRWISE_VERIFICATION = "PAIRWISE_VERIFICATION"
+    PROVIDER_FAILURE = "PROVIDER_FAILURE"
 
 
 class ResolutionScope(BaseModel):
@@ -72,6 +77,8 @@ class EntityAlias(BaseModel):
     alias: str = Field(min_length=1, max_length=1024)
     scope: ResolutionScope
     source: AliasSource
+    source_mention_id: UUID | None = None
+    source_resolution_id: UUID | None = None
     active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -345,6 +352,27 @@ class VerifiedResolutionPolicy:
             candidate_entity_ids=[candidate.entity.id for candidate in candidates],
             factors=[ResolutionFactor.PAIRWISE_VERIFICATION],
             resolver_version=self.version,
+        )
+
+
+class ControlledAliasPromotionPolicy:
+    """Create a narrow alias proposal only from a high-confidence semantic decision."""
+
+    def propose(self, mention: EntityMention, decision: ResolutionDecision) -> EntityAlias | None:
+        if (
+            decision.outcome is not ResolutionOutcome.RESOLVED
+            or decision.confidence is not ResolutionConfidence.HIGH
+            or decision.canonical_entity_id is None
+            or ResolutionFactor.PAIRWISE_VERIFICATION not in decision.factors
+        ):
+            return None
+        return EntityAlias(
+            canonical_entity_id=decision.canonical_entity_id,
+            alias=mention.text,
+            scope=mention.scope,
+            source=AliasSource.AUTO_RESOLUTION,
+            source_mention_id=mention.id,
+            source_resolution_id=decision.id,
         )
 
 

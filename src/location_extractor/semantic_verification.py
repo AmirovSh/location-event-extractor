@@ -11,12 +11,13 @@ from location_extractor.resolution import (
     EntityMention,
     PairwiseVerification,
     ResolutionCandidate,
+    ResolutionProviderError,
 )
 
 StructuredVerification = TypeVar("StructuredVerification", bound=BaseModel)
 
 
-class VerificationProviderError(RuntimeError):
+class VerificationProviderError(ResolutionProviderError):
     pass
 
 

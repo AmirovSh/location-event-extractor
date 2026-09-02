@@ -9,12 +9,14 @@ from location_extractor.db import Base, create_session_factory
 from location_extractor.resolution import (
     AliasSource,
     CanonicalEntity,
+    ControlledAliasPromotionPolicy,
     DeterministicResolutionPolicy,
     EntityAlias,
     EntityMention,
     EntityType,
     ResolutionConfidence,
     ResolutionDecision,
+    ResolutionFactor,
     ResolutionOutcome,
     ResolutionScope,
     normalize_mention,
@@ -161,3 +163,74 @@ def test_resolution_decision_cannot_cross_tenant_boundary(
                 resolver_version="v1",
             )
         )
+
+
+def test_controlled_alias_promotion_is_scoped_idempotent_and_provenanced(
+    repository: SqlAlchemyEntityResolutionRepository,
+) -> None:
+    scope = ResolutionScope(
+        tenant_id="tenant-a",
+        source_id="chat",
+        conversation_id="operations",
+        sender_id="dispatcher",
+    )
+    entity = CanonicalEntity(
+        tenant_id=scope.tenant_id,
+        entity_type=EntityType.PERSON,
+        display_name="John Smith",
+    )
+    repository.save_entity(entity, [])
+    mention = repository.save_mention(
+        EntityMention(entity_type=EntityType.PERSON, text="John S.", scope=scope)
+    )
+    decision = repository.save_decision(
+        ResolutionDecision(
+            mention_id=mention.id,
+            outcome=ResolutionOutcome.RESOLVED,
+            confidence=ResolutionConfidence.HIGH,
+            canonical_entity_id=entity.id,
+            candidate_entity_ids=[entity.id],
+            factors=[ResolutionFactor.PAIRWISE_VERIFICATION],
+            resolver_version="test-v1",
+        )
+    )
+    alias = ControlledAliasPromotionPolicy().propose(mention, decision)
+
+    assert alias is not None
+    with pytest.raises(ValueError, match="eligible resolution"):
+        repository.promote_alias(alias.model_copy(update={"alias": "Unverified Name"}))
+    assert repository.promote_alias(alias)
+    assert not repository.promote_alias(alias)
+    candidates = repository.find_candidates(
+        EntityMention(entity_type=EntityType.PERSON, text="john s.", scope=scope)
+    )
+    assert [candidate.entity.id for candidate in candidates] == [entity.id]
+    assert alias.source_mention_id == mention.id
+    assert alias.source_resolution_id == decision.id
+
+
+def test_alias_promotion_rejects_medium_confidence_and_exact_alias() -> None:
+    scope = ResolutionScope(tenant_id="tenant-a")
+    mention = EntityMention(entity_type=EntityType.PERSON, text="John", scope=scope)
+    policy = ControlledAliasPromotionPolicy()
+    medium = ResolutionDecision(
+        mention_id=mention.id,
+        outcome=ResolutionOutcome.RESOLVED,
+        confidence=ResolutionConfidence.MEDIUM,
+        canonical_entity_id=CanonicalEntity(
+            tenant_id=scope.tenant_id,
+            entity_type=EntityType.PERSON,
+            display_name="John Smith",
+        ).id,
+        factors=[ResolutionFactor.PAIRWISE_VERIFICATION],
+        resolver_version="test-v1",
+    )
+    exact = medium.model_copy(
+        update={
+            "confidence": ResolutionConfidence.HIGH,
+            "factors": [ResolutionFactor.EXACT_ALIAS],
+        }
+    )
+
+    assert policy.propose(mention, medium) is None
+    assert policy.propose(mention, exact) is None

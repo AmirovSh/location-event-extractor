@@ -218,10 +218,15 @@ Run the autonomous synthetic extraction-to-PostgreSQL slice:
 python scripts/run_vertical_slice.py
 ```
 
-The five-message fixture exercises explicit person/location extraction, scoped semantic identity
-resolution, abstention for an unknown person, durable provenance, and idempotent replay. It seeds
-only canonical identities and aliases; extraction and non-exact linking still use the configured
-providers. A repeated run reuses the stored events and active decisions without new verifier calls.
+The ten-message, eleven-event fixture exercises explicit person/location extraction, ambiguity,
+partial resolution, multiple events, tenant isolation, provider failure reporting, durable
+provenance, and idempotent replay. It seeds only canonical identities and aliases; extraction and
+non-exact linking still use the configured providers. A repeated run reuses stored events and active
+decisions without new verifier calls. Provider failures are counted and do not abort the batch.
+
+High-confidence semantic resolutions may promote the literal mention into a narrowly scoped alias.
+Each promoted alias retains its source mention and resolution decision. Exact, medium-confidence,
+ambiguous, unresolved, and provider-failure outcomes never produce aliases.
 
 ## Local setup
 
@@ -408,5 +413,5 @@ service time.
 and planned events may be retained, but this MVP does not build derived current-location state.
 Pronoun resolution, deictic locations, dialogue context, geocoding, relative-time normalization,
 conflict reconciliation, and streaming remain outside the extraction endpoint. Scoped resolution
-of explicit English person/location mentions is active when configured. Automatic alias promotion
-and the experimental reranker remain disabled.
+of explicit English person/location mentions is active when configured. Conservative scoped alias
+promotion is active; scope widening and the experimental reranker remain disabled.
